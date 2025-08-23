@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		93A0B8902E5A1E63009AF508 /* SwiftGitX in Frameworks */ = {isa = PBXBuildFile; productRef = 93A0B88F2E5A1E63009AF508 /* SwiftGitX */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		93E7720F2E59ED7B00B77DFC /* FastGit.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FastGit.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -23,6 +27,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				93A0B8902E5A1E63009AF508 /* SwiftGitX in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -65,6 +70,7 @@
 			);
 			name = FastGit;
 			packageProductDependencies = (
+				93A0B88F2E5A1E63009AF508 /* SwiftGitX */,
 			);
 			productName = FastGit;
 			productReference = 93E7720F2E59ED7B00B77DFC /* FastGit.app */;
@@ -94,6 +100,9 @@
 			);
 			mainGroup = 93E772062E59ED7B00B77DFC;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				93A0B88E2E5A1E63009AF508 /* XCLocalSwiftPackageReference "External/SwiftGitX" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 93E772102E59ED7B00B77DFC /* Products */;
 			projectDirPath = "";
@@ -258,6 +267,7 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -285,6 +295,7 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -321,6 +332,20 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		93A0B88E2E5A1E63009AF508 /* XCLocalSwiftPackageReference "External/SwiftGitX" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = External/SwiftGitX;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		93A0B88F2E5A1E63009AF508 /* SwiftGitX */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = SwiftGitX;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 93E772072E59ED7B00B77DFC /* Project object */;
 }

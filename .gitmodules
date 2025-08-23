@@ -1,0 +1,3 @@
+[submodule "External/SwiftGitX"]
+	path = External/SwiftGitX
+	url = https://github.com/ibrahimcetin/SwiftGitX.git
