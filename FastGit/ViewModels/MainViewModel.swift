@@ -12,6 +12,9 @@ import SwiftUI
 @MainActor
 class MainViewModel: ObservableObject {
     
+    // MARK: - 单例
+    static let shared = MainViewModel()
+    
     // MARK: - 发布属性
     @Published var currentRepository: GitRepository?
     @Published var commits: [Commit] = []
@@ -25,6 +28,7 @@ class MainViewModel: ObservableObject {
     
     // MARK: - 依赖
     private let gitService = GitService.shared
+    private let repositoryManager = RepositoryManager.shared
     
     // MARK: - 初始化
     init() {
@@ -53,6 +57,15 @@ class MainViewModel: ObservableObject {
             return
         }
         
+        // 为新打开的仓库创建SecurityScopedBookmark（关键修复）
+        let securityManager = SecurityScopedResourceManager.shared
+        let bookmarkCreated = securityManager.createBookmark(for: url)
+        if bookmarkCreated {
+            print("✅ 已为新仓库创建安全书签: \(path)")
+        } else {
+            print("⚠️ 为新仓库创建安全书签失败: \(path)")
+        }
+        
         // 开始访问安全作用域资源
         isAccessingSecurityScopedResource = url.startAccessingSecurityScopedResource()
         repositoryURL = url
@@ -62,6 +75,9 @@ class MainViewModel: ObservableObject {
         // 打开仓库
         if let repository = await gitService.openRepository(at: path) {
             self.currentRepository = repository
+            
+            // 将仓库添加到RepositoryManager（新仓库排在第一位）
+            repositoryManager.setCurrentRepositoryAsNew(repository)
             
             // 获取提交历史
             await loadCommitHistory()

@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		93A0B8902E5A1E63009AF508 /* SwiftGitX in Frameworks */ = {isa = PBXBuildFile; productRef = 93A0B88F2E5A1E63009AF508 /* SwiftGitX */; };
+		93A0B8962E5A3A40009AF508 /* SwiftGitX in Frameworks */ = {isa = PBXBuildFile; productRef = 93A0B8952E5A3A40009AF508 /* SwiftGitX */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -27,6 +28,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				93A0B8962E5A3A40009AF508 /* SwiftGitX in Frameworks */,
 				93A0B8902E5A1E63009AF508 /* SwiftGitX in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -71,6 +73,7 @@
 			name = FastGit;
 			packageProductDependencies = (
 				93A0B88F2E5A1E63009AF508 /* SwiftGitX */,
+				93A0B8952E5A3A40009AF508 /* SwiftGitX */,
 			);
 			productName = FastGit;
 			productReference = 93E7720F2E59ED7B00B77DFC /* FastGit.app */;
@@ -101,7 +104,7 @@
 			mainGroup = 93E772062E59ED7B00B77DFC;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				93A0B88E2E5A1E63009AF508 /* XCLocalSwiftPackageReference "External/SwiftGitX" */,
+				93A0B8942E5A3A40009AF508 /* XCLocalSwiftPackageReference "External/SwiftGitX" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 93E772102E59ED7B00B77DFC /* Products */;
@@ -334,7 +337,7 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		93A0B88E2E5A1E63009AF508 /* XCLocalSwiftPackageReference "External/SwiftGitX" */ = {
+		93A0B8942E5A3A40009AF508 /* XCLocalSwiftPackageReference "External/SwiftGitX" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = External/SwiftGitX;
 		};
@@ -342,6 +345,10 @@
 
 /* Begin XCSwiftPackageProductDependency section */
 		93A0B88F2E5A1E63009AF508 /* SwiftGitX */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = SwiftGitX;
+		};
+		93A0B8952E5A3A40009AF508 /* SwiftGitX */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = SwiftGitX;
 		};

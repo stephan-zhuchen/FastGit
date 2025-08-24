@@ -7,43 +7,66 @@
 
 import SwiftUI
 
-/// 提交记录行视图
+/// 提交记录行视图 - 任务1.2: 提交历史可视化
+/// 显示Commit的SHA（缩写）、提交信息、作者和日期
 struct CommitRowView: View {
     let commit: Commit
     
     var body: some View {
-        HStack(spacing: 12) {
-            // SHA标识
+        HStack(alignment: .top, spacing: 12) {
+            // SHA标识 - 使用单独样式突出显示
             Text(commit.shortSha)
                 .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.primary)
                 .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(.quaternary)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .padding(.vertical, 3)
+                .background(.thinMaterial)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(.quaternary, lineWidth: 1)
+                )
             
-            VStack(alignment: .leading, spacing: 4) {
-                // 提交消息
-                Text(commit.message)
+            VStack(alignment: .leading, spacing: 6) {
+                // 提交消息 - 主要内容
+                Text(commit.message.trimmingCharacters(in: .whitespacesAndNewlines))
                     .font(.body)
-                    .lineLimit(2)
+                    .fontWeight(.medium)
+                    .lineLimit(3)
                     .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
                 
-                // 作者和时间信息
+                // 元数据：作者和时间信息
                 HStack {
-                    Text(commit.author.displayName)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    // 作者信息
+                    Label {
+                        Text(commit.author.name)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } icon: {
+                        Image(systemName: "person.crop.circle")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    }
                     
                     Spacer()
                     
-                    Text(commit.date.formatted(.relative(presentation: .named)))
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
+                    // 时间信息
+                    Label {
+                        Text(commit.date.formatted(.relative(presentation: .named)))
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    } icon: {
+                        Image(systemName: "clock")
+                            .font(.caption2)
+                            .foregroundStyle(.quaternary)
+                    }
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 8)
+        .padding(.horizontal, 4)
     }
 }
 
