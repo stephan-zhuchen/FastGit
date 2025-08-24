@@ -16,14 +16,31 @@ struct Commit: Identifiable, Equatable {
     let author: Author
     let date: Date
     let parents: [String]
+    let branches: [String] // 指向此提交的分支名称
+    let tags: [String] // 指向此提交的标签名称
     
-    init(sha: String, message: String, author: Author, date: Date, parents: [String] = []) {
+    init(
+        sha: String, 
+        message: String, 
+        author: Author, 
+        date: Date, 
+        parents: [String] = [],
+        branches: [String] = [],
+        tags: [String] = []
+    ) {
         self.sha = sha
         self.shortSha = String(sha.prefix(7))
         self.message = message
         self.author = author
         self.date = date
         self.parents = parents
+        self.branches = branches
+        self.tags = tags
+    }
+    
+    /// 是否有分支或标签引用
+    var hasReferences: Bool {
+        return !branches.isEmpty || !tags.isEmpty
     }
 }
 

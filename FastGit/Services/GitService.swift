@@ -93,7 +93,7 @@ class GitService: ObservableObject {
             }
             
             // 使用SwiftGitX打开仓库
-            let swiftGitXRepo = try Repository.open(at: repoURL)
+            let _ = try Repository.open(at: repoURL)
             
             // 创建我们的GitRepository对象
             let repoName = repoURL.lastPathComponent
@@ -146,6 +146,14 @@ class GitService: ObservableObject {
                 return []
             }
             
+            // 获取所有分支和标签信息
+            let branches = try await fetchBranches(from: swiftGitXRepo)
+            let tags = try await fetchTags(from: swiftGitXRepo)
+            
+            // 创建 SHA -> 分支名和 SHA -> 标签名的映射
+            let branchMap = createCommitReferencesMap(branches: branches)
+            let tagMap = createCommitReferencesMap(tags: tags)
+            
             print("🚀 开始获取提交历史...")
             let commitSequence = try swiftGitXRepo.log()
             
@@ -162,12 +170,18 @@ class GitService: ObservableObject {
                     parentShas = []
                 }
                 
+                let commitSha = swiftGitXCommit.id.hex
+                let commitBranches = branchMap[commitSha] ?? []
+                let commitTags = tagMap[commitSha] ?? []
+                
                 let fastGitCommit = Commit(
-                    sha: swiftGitXCommit.id.hex,
+                    sha: commitSha,
                     message: swiftGitXCommit.message,
                     author: author,
                     date: swiftGitXCommit.date,
-                    parents: parentShas
+                    parents: parentShas,
+                    branches: commitBranches,
+                    tags: commitTags
                 )
                 commits.append(fastGitCommit)
                 
@@ -179,7 +193,8 @@ class GitService: ObservableObject {
             
             print("✅ 获取到 \(commits.count) 个提交记录")
             for commit in commits.prefix(3) {
-                print("   - \(commit.shortSha): \(commit.message)")
+                let refsInfo = commit.hasReferences ? " [分支: \(commit.branches.joined(separator: ", ")), 标签: \(commit.tags.joined(separator: ", "))]" : ""
+                print("   - \(commit.shortSha): \(commit.message)\(refsInfo)")
             }
             if commits.count > 3 {
                 print("   ... 及其他 \(commits.count - 3) 个提交")
@@ -212,6 +227,133 @@ class GitService: ObservableObject {
             print("❌ 详细错误: \(error)")
             return []
         }
+    }
+    
+    /// 获取仓库的所有分支
+    /// - Parameter repo: SwiftGitX 仓库对象
+    /// - Returns: 分支数组
+    private func fetchBranches(from repo: Repository) async throws -> [Branch] {
+        var branches: [Branch] = []
+        
+        // 获取当前分支
+        let currentBranchName: String?
+        do {
+            let currentBranch = try repo.branch.current
+            currentBranchName = currentBranch.name
+        } catch {
+            print("⚠️ 获取当前分支失败: \(error)")
+            currentBranchName = nil
+        }
+        
+        // 获取所有本地分支
+        do {
+            let localBranches = try repo.branch.list(.local)
+            for branch in localBranches {
+                let isCurrent = branch.name == currentBranchName
+                let fastGitBranch = Branch(
+                    name: branch.name,
+                    isCurrent: isCurrent,
+                    isRemote: false,
+                    targetSha: branch.target.id.hex
+                )
+                branches.append(fastGitBranch)
+            }
+        } catch {
+            print("⚠️ 获取本地分支失败: \(error)")
+        }
+        
+        // 获取所有远程分支
+        do {
+            let remoteBranches = try repo.branch.list(.remote)
+            for branch in remoteBranches {
+                let fastGitBranch = Branch(
+                    name: branch.name,
+                    isCurrent: false,
+                    isRemote: true,
+                    targetSha: branch.target.id.hex
+                )
+                branches.append(fastGitBranch)
+            }
+        } catch {
+            print("⚠️ 获取远程分支失败: \(error)")
+        }
+        
+        print("🌿 获取到 \(branches.count) 个分支")
+        return branches
+    }
+    
+    /// 获取仓库的所有标签
+    /// - Parameter repo: SwiftGitX 仓库对象
+    /// - Returns: 标签数组
+    private func fetchTags(from repo: Repository) async throws -> [Tag] {
+        var tags: [Tag] = []
+        
+        do {
+            let swiftGitXTags = try repo.tag.list()
+            for swiftGitXTag in swiftGitXTags {
+                // 检查是否为注释标签（通过tagger是否为nil来判断）
+                let isAnnotated = swiftGitXTag.tagger != nil
+                
+                var message: String?
+                var taggerName: String?
+                var taggerEmail: String?
+                var date: Date?
+                
+                // 如果是注释标签，获取额外信息
+                if isAnnotated {
+                    message = swiftGitXTag.message
+                    taggerName = swiftGitXTag.tagger?.name
+                    taggerEmail = swiftGitXTag.tagger?.email
+                    date = swiftGitXTag.tagger?.date
+                }
+                
+                let tag = Tag(
+                    name: swiftGitXTag.name,
+                    targetSha: swiftGitXTag.target.id.hex,
+                    message: message,
+                    taggerName: taggerName,
+                    taggerEmail: taggerEmail,
+                    date: date,
+                    isAnnotated: isAnnotated
+                )
+                tags.append(tag)
+            }
+        } catch {
+            print("⚠️ 获取标签失败: \(error)")
+        }
+        
+        print("🏷️ 获取到 \(tags.count) 个标签")
+        return tags
+    }
+    
+    /// 创建提交SHA到引用名称的映射
+    /// - Parameter branches: 分支数组
+    /// - Returns: SHA -> [引用名称] 的映射
+    private func createCommitReferencesMap(branches: [Branch]) -> [String: [String]] {
+        var map: [String: [String]] = [:]
+        for branch in branches {
+            if let sha = branch.targetSha {
+                if map[sha] == nil {
+                    map[sha] = []
+                }
+                map[sha]?.append(branch.shortName)
+            }
+        }
+        return map
+    }
+    
+    /// 创建提交SHA到标签名称的映射
+    /// - Parameter tags: 标签数组
+    /// - Returns: SHA -> [标签名称] 的映射
+    private func createCommitReferencesMap(tags: [Tag]) -> [String: [String]] {
+        var map: [String: [String]] = [:]
+        for tag in tags {
+            if map[tag.targetSha] == nil {
+                map[tag.targetSha] = []
+            }
+            map[tag.targetSha]?.append(tag.name)
+        }
+        return map
     }
 
 }
