@@ -12,7 +12,19 @@ import AppKit
 struct WelcomeView: View {
     let onOpenRepository: () -> Void
     let onCloneRepository: () -> Void
+    let onOpenRecentRepository: ((URL) async -> Void)?  // 新增：打开最近仓库的回调
     @StateObject private var repositoryManager = RepositoryManager.shared
+    
+    // 使用默认参数的初始化方法，保持向后兼容
+    init(
+        onOpenRepository: @escaping () -> Void,
+        onCloneRepository: @escaping () -> Void,
+        onOpenRecentRepository: ((URL) async -> Void)? = nil
+    ) {
+        self.onOpenRepository = onOpenRepository
+        self.onCloneRepository = onCloneRepository
+        self.onOpenRecentRepository = onOpenRecentRepository
+    }
     
     var body: some View {
         VStack(spacing: 30) {
@@ -150,31 +162,31 @@ struct WelcomeView: View {
         let securityManager = SecurityScopedResourceManager.shared
         if let secureURL = securityManager.getSecurityScopedURL(for: repository.path) {
             // 有已保存的权限，直接打开仓库
-            openRepositoryWithSecureURL(secureURL, repository: repository)
+            await openRepositoryWithSecureURL(secureURL, repository: repository)
             print("✅ 使用已保存的安全权限打开仓库: \(repository.displayName)")
         } else {
             // 没有保存的权限，请求用户授权
             print("⚠️ 需要为仓库重新获取访问权限: \(repository.displayName)")
-            requestRepositoryAccess(for: repository)
+            await requestRepositoryAccess(for: repository)
         }
     }
     
     /// 请求仓库访问权限（使用更友好的方式）
     /// - Parameter repository: 需要权限的仓库
-    private func requestRepositoryAccess(for repository: GitRepository) {
+    private func requestRepositoryAccess(for repository: GitRepository) async {
         // 使用SecurityScopedResourceManager来请求权限
         let securityManager = SecurityScopedResourceManager.shared
         
         if let secureURL = securityManager.getSecurityScopedURL(for: repository.path) {
             // 成功获取权限（可能是通过文件选择器）
-            openRepositoryWithSecureURL(secureURL, repository: repository)
+            await openRepositoryWithSecureURL(secureURL, repository: repository)
             print("✅ 成功获取仓库访问权限: \(repository.displayName)")
         } else {
             // 权限获取失败，用户可能取消了授权
             print("⚠️ 未能获取仓库访问权限: \(repository.displayName)")
             
             // 显示提示信息给用户
-            DispatchQueue.main.async {
+            await MainActor.run {
                 let alert = NSAlert()
                 alert.messageText = "需要访问权限"
                 alert.informativeText = "FastGit需要访问\"\(repository.displayName)\"仓库的权限才能继续操作。这是macOS安全要求。"
@@ -189,7 +201,14 @@ struct WelcomeView: View {
     /// - Parameters:
     ///   - url: 安全的仓库URL
     ///   - repository: 原始仓库信息（可选）
-    private func openRepositoryWithSecureURL(_ url: URL, repository: GitRepository?) {
+    private func openRepositoryWithSecureURL(_ url: URL, repository: GitRepository?) async {
+        // 如果有回调，使用回调打开仓库（新的方式）
+        if let onOpenRecentRepository = onOpenRecentRepository {
+            await onOpenRecentRepository(url)
+            return
+        }
+        
+        // 后退到旧的方式（保持向后兼容）
         let repositoryName = url.lastPathComponent
         let newRepository = GitRepository(name: repositoryName, path: url.path)
         
