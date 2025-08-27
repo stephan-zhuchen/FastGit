@@ -160,9 +160,10 @@ class GitService: ObservableObject {
 
             let commitSequence: CommitSequence
             if let startSHA = sha {
-                // Corrected API call based on compiler feedback
-                let startCommit = try swiftGitXRepo.commit(startSHA)
-                commitSequence = try swiftGitXRepo.log(from: startCommit.id)
+                // Corrected API call based on the provided source code
+                let startOID = try OID(hex: startSHA)
+                let startCommit: Commit = try swiftGitXRepo.show(id: startOID)
+                commitSequence = swiftGitXRepo.log(from: startCommit)
             } else {
                 commitSequence = try swiftGitXRepo.log()
             }
