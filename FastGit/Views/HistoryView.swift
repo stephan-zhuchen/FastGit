@@ -232,7 +232,8 @@ struct HistoryView: View {
         isLoading = true
         errorMessage = nil
         
-        commits = await gitService.fetchCommitHistory(for: repository)
+        let (fetchedCommits, _, _) = await gitService.fetchCommitHistory(for: repository)
+        commits = fetchedCommits
         
         isLoading = false
     }
