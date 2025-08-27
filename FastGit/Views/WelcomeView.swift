@@ -13,7 +13,7 @@ struct WelcomeView: View {
     let onOpenRepository: () -> Void
     let onCloneRepository: () -> Void
     let onOpenRecentRepository: ((URL) async -> Void)?  // 新增：打开最近仓库的回调
-    @StateObject private var repositoryManager = RepositoryManager.shared
+    @ObservedObject private var repositoryManager = RepositoryManager.shared  // 使用@ObservedObject而不是@StateObject
     
     // 使用默认参数的初始化方法，保持向后兼容
     init(

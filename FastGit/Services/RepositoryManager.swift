@@ -292,7 +292,7 @@ extension RepositoryManager {
         return (total: recentRepositories.count, recent: recentRepositories.count)
     }
     
-    /// 检查是否有最近仓库
+    /// 检查是否有最近仓库（计算属性会自动响应recentRepositories的变化）
     var hasRecentRepositories: Bool {
         return !recentRepositories.isEmpty
     }
