@@ -22,6 +22,13 @@ class MainViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var showingFilePicker = false
     
+    // MARK: - Function List State
+    @Published var branches: [Branch] = []
+    @Published var tags: [Tag] = []
+    @Published var submodules: [String] = []
+    @Published var selectedFunctionItem: SelectedFunctionItem? = .expandableType(.localBranches)
+    @Published var expandedSections: Set<ExpandableFunctionType> = [.localBranches]
+
     // MARK: - 私有属性
     private var repositoryURL: URL?
     private var isAccessingSecurityScopedResource = false
@@ -79,20 +86,33 @@ class MainViewModel: ObservableObject {
             // 将仓库添加到RepositoryManager（新仓库排在第一位）
             repositoryManager.setCurrentRepositoryAsNew(repository)
             
-            // 获取提交历史
-            await loadCommitHistory()
+            // 获取仓库数据
+            await loadRepositoryData()
         } else {
             // 如果打开失败，停止访问
             stopAccessingCurrentRepository()
         }
     }
     
-    /// 加载提交历史
-    func loadCommitHistory() async {
+    /// 加载仓库核心数据（提交、分支、标签等）
+    func loadRepositoryData() async {
         guard let repository = currentRepository else { return }
         
         isLoading = true
-        commits = await gitService.fetchCommitHistory(for: repository)
+        let (fetchedCommits, fetchedBranches, fetchedTags) = await gitService.fetchCommitHistory(for: repository)
+
+        // 更新UI相关的属性
+        self.commits = fetchedCommits
+        self.branches = fetchedBranches
+        self.tags = fetchedTags
+        self.submodules = [] // 暂不实现
+
+        // 重置选择状态，默认选中本地分支类别
+        self.selectedFunctionItem = .expandableType(.localBranches)
+
+        // 默认展开本地分支
+        self.expandedSections = [.localBranches]
+
         isLoading = false
     }
     

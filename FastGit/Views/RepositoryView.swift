@@ -9,45 +9,38 @@ import SwiftUI
 
 /// 仓库视图 - 实现三区域布局
 struct RepositoryView: View {
+    @ObservedObject var viewModel: MainViewModel
     let repository: GitRepository
     let onClose: ((GitRepository) -> Void)?  // 关闭Tab的回调
-    
-    // 新的功能列表状态管理
-    @State private var selectedFunctionItem: SelectedFunctionItem? = .expandableType(.localBranches)
-    @State private var expandedSections: Set<ExpandableFunctionType> = [.localBranches]  // 默认展开本地分支
-    
-    // Git数据状态
-    @State private var branches: [Branch] = []
-    @State private var tags: [Tag] = []
-    @State private var submodules: [String] = []  // 暂时为空
-    @State private var isLoadingGitData = false
-    
-    // 默认初始化方法，保持向后兼容
+
+    // 修改初始化方法以接收ViewModel
     init(
+        viewModel: MainViewModel,
         repository: GitRepository,
         onClose: ((GitRepository) -> Void)? = nil
     ) {
+        self.viewModel = viewModel
         self.repository = repository
         self.onClose = onClose
     }
     
     var body: some View {
         HStack(spacing: 0) {
-            // 左侧功能列表导航栏
+            // 左侧功能列表导航栏 - 使用ViewModel的数据和状态
             FunctionListView(
-                selectedItem: $selectedFunctionItem,
-                expandedSections: $expandedSections,
+                selectedItem: $viewModel.selectedFunctionItem,
+                expandedSections: $viewModel.expandedSections,
                 repository: repository,
-                branches: branches,
-                tags: tags,
-                submodules: submodules
+                branches: viewModel.branches,
+                tags: viewModel.tags,
+                submodules: viewModel.submodules
             )
             
             Divider()
             
             // 右侧内容区域
             VStack(spacing: 0) {
-                // 上方工具栏（不再显示关闭按钮）
+                // 上方工具栏
                 RepositoryToolbarView(onClose: nil)
                     .padding(.horizontal, 16)
                     .padding(.top, 16)
@@ -55,9 +48,9 @@ struct RepositoryView: View {
                 Divider()
                     .padding(.horizontal, 16)
                 
-                // 下方主体内容区域
+                // 下方主体内容区域 - 使用ViewModel的状态
                 Group {
-                    if let item = selectedFunctionItem {
+                    if let item = viewModel.selectedFunctionItem {
                         contentView(for: item)
                     } else {
                         defaultContentView
@@ -69,23 +62,15 @@ struct RepositoryView: View {
         }
         .navigationTitle(repository.displayName)
         .navigationSubtitle(repository.path)
-        .task {
-            await loadGitData()
-        }
-        .onChange(of: repository) { _, _ in
-            Task {
-                await loadGitData()
-            }
-        }
+        // 移除.task和.onChange，数据加载由ViewModel触发
     }
     
     // MARK: - 子视图
     
     /// 根据选中的功能项返回对应的内容视图
-    /// - Parameter item: 选中的功能项
-    /// - Returns: 对应的视图
     @ViewBuilder
     private func contentView(for item: SelectedFunctionItem) -> some View {
+        // 所有逻辑现在都从ViewModel读取数据
         switch item {
         case .fixedOption(let option):
             switch option {
@@ -98,19 +83,19 @@ struct RepositoryView: View {
         case .expandableType(let type):
             switch type {
             case .localBranches:
-                if branches.filter({ !$0.isRemote }).isEmpty {
+                if viewModel.branches.filter({ !$0.isRemote }).isEmpty {
                     emptyStateView(for: "本地分支", icon: "point.3.connected.trianglepath.dotted")
                 } else {
-                    branchListView(branches: branches.filter { !$0.isRemote }, title: "本地分支")
+                    branchListView(branches: viewModel.branches.filter { !$0.isRemote }, title: "本地分支")
                 }
             case .remoteBranches:
-                if branches.filter({ $0.isRemote }).isEmpty {
+                if viewModel.branches.filter({ $0.isRemote }).isEmpty {
                     emptyStateView(for: "远程分支", icon: "cloud")
                 } else {
-                    branchListView(branches: branches.filter { $0.isRemote }, title: "远程分支")
+                    branchListView(branches: viewModel.branches.filter { $0.isRemote }, title: "远程分支")
                 }
             case .tags:
-                if tags.isEmpty {
+                if viewModel.tags.isEmpty {
                     emptyStateView(for: "标签", icon: "tag")
                 } else {
                     tagListView()
@@ -120,7 +105,7 @@ struct RepositoryView: View {
             }
             
         case .branchItem(let branchName, let isRemote):
-            if let branch = branches.first(where: { $0.shortName == branchName && $0.isRemote == isRemote }) {
+            if let branch = viewModel.branches.first(where: { $0.shortName == branchName && $0.isRemote == isRemote }) {
                 branchDetailView(branch: branch)
             } else {
                 Text("分支不存在")
@@ -128,7 +113,7 @@ struct RepositoryView: View {
             }
             
         case .tagItem(let tagName):
-            if let tag = tags.first(where: { $0.name == tagName }) {
+            if let tag = viewModel.tags.first(where: { $0.name == tagName }) {
                 tagDetailView(tag: tag)
             } else {
                 Text("标签不存在")
@@ -142,17 +127,14 @@ struct RepositoryView: View {
     
     // MARK: - 子视图方法
     
-    /// 默认内容视图（无选择时显示）
     private var defaultContentView: some View {
         VStack(spacing: 20) {
             Image(systemName: "sidebar.left")
                 .font(.system(size: 48))
                 .foregroundStyle(.tertiary)
-            
             Text("请从左侧选择功能")
                 .font(.headline)
                 .foregroundColor(.secondary)
-            
             Text("选择左侧功能列表中的功能来查看相应内容")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
@@ -161,27 +143,23 @@ struct RepositoryView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     
-    /// 占位符视图（用于未实现的功能）
     private func placeholderView(for title: String, icon: String, color: Color = .orange) -> some View {
         VStack(spacing: 20) {
             Image(systemName: icon)
                 .font(.system(size: 48))
                 .foregroundStyle(color)
-            
             VStack(spacing: 8) {
                 Text("\(title)功能")
                     .font(.headline)
                     .foregroundColor(.primary)
-                
                 Text("此功能正在开发中，敬请期待")
                     .font(.body)
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
             }
-            
             Button("返回本地分支") {
-                selectedFunctionItem = .expandableType(.localBranches)
-                expandedSections.insert(.localBranches)
+                viewModel.selectedFunctionItem = .expandableType(.localBranches)
+                viewModel.expandedSections.insert(.localBranches)
             }
             .buttonStyle(.borderedProminent)
         }
@@ -190,17 +168,14 @@ struct RepositoryView: View {
         .clipShape(RoundedRectangle(cornerRadius: 10))
     }
     
-    /// 空状态视图
     private func emptyStateView(for title: String, icon: String) -> some View {
         VStack(spacing: 16) {
             Image(systemName: icon)
                 .font(.system(size: 32))
                 .foregroundStyle(.tertiary)
-            
             Text("暂无\(title)")
                 .font(.headline)
                 .foregroundColor(.secondary)
-            
             Text("当前仓库中没有找到\(title)数据")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
@@ -209,76 +184,64 @@ struct RepositoryView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     
-    /// 分支列表视图
     private func branchListView(branches: [Branch], title: String) -> some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
                 Text(title)
                     .font(.title2)
                     .fontWeight(.semibold)
-                
                 Spacer()
-                
                 Text("\(branches.count) 个分支")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            
             LazyVStack(spacing: 8) {
                 ForEach(branches) { branch in
                     BranchRowView(
                         branch: branch,
-                        isSelected: selectedFunctionItem == .branchItem(branch.shortName, isRemote: branch.isRemote),
+                        isSelected: viewModel.selectedFunctionItem == .branchItem(branch.shortName, isRemote: branch.isRemote),
                         onSelect: {
-                            selectedFunctionItem = .branchItem(branch.shortName, isRemote: branch.isRemote)
+                            viewModel.selectedFunctionItem = .branchItem(branch.shortName, isRemote: branch.isRemote)
                         }
                     )
                 }
             }
-            
             Spacer()
         }
     }
     
-    /// 标签列表视图
     private func tagListView() -> some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
                 Text("标签列表")
                     .font(.title2)
                     .fontWeight(.semibold)
-                
                 Spacer()
-                
-                Text("\(tags.count) 个标签")
+                Text("\(viewModel.tags.count) 个标签")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            
             LazyVStack(spacing: 8) {
-                ForEach(tags) { tag in
+                ForEach(viewModel.tags) { tag in
                     TagRowView(
                         tag: tag,
-                        isSelected: selectedFunctionItem == .tagItem(tag.name),
+                        isSelected: viewModel.selectedFunctionItem == .tagItem(tag.name),
                         onSelect: {
-                            selectedFunctionItem = .tagItem(tag.name)
+                            viewModel.selectedFunctionItem = .tagItem(tag.name)
                         }
                     )
                 }
             }
-            
             Spacer()
         }
     }
     
-    /// 分支详情视图
     private func branchDetailView(branch: Branch) -> some View {
         VStack(alignment: .leading, spacing: 20) {
             HStack {
                 Text("分支: \(branch.shortName)")
                     .font(.title2)
                     .fontWeight(.semibold)
-                
                 if branch.isCurrent {
                     Text("当前")
                         .font(.caption)
@@ -288,7 +251,6 @@ struct RepositoryView: View {
                         .foregroundColor(.white)
                         .clipShape(Capsule())
                 }
-                
                 if branch.isRemote {
                     Text("远程")
                         .font(.caption)
@@ -298,28 +260,23 @@ struct RepositoryView: View {
                         .foregroundColor(.white)
                         .clipShape(Capsule())
                 }
-                
                 Spacer()
             }
-            
             if let sha = branch.targetSha {
                 Text("目标提交: \(String(sha.prefix(8)))")
                     .font(.body)
                     .foregroundStyle(.secondary)
             }
-            
             HistoryView(repository: repository)
         }
     }
     
-    /// 标签详情视图
     private func tagDetailView(tag: Tag) -> some View {
         VStack(alignment: .leading, spacing: 20) {
             HStack {
                 Text("标签: \(tag.name)")
                     .font(.title2)
                     .fontWeight(.semibold)
-                
                 Text(tag.isAnnotated ? "注释标签" : "轻量标签")
                     .font(.caption)
                     .padding(.horizontal, 8)
@@ -327,68 +284,33 @@ struct RepositoryView: View {
                     .background(tag.isAnnotated ? Color.orange : Color.gray)
                     .foregroundColor(.white)
                     .clipShape(Capsule())
-                
                 Spacer()
             }
-            
             Text("目标提交: \(String(tag.targetSha.prefix(8)))")
                 .font(.body)
                 .foregroundStyle(.secondary)
-            
             if let message = tag.message {
                 Text("标签消息: \(message)")
                     .font(.body)
                     .foregroundStyle(.secondary)
             }
-            
             if let tagger = tag.taggerInfo {
                 Text("创建者: \(tagger)")
                     .font(.body)
                     .foregroundStyle(.secondary)
             }
-            
             HistoryView(repository: repository)
         }
     }
 }
 
-// MARK: - Git数据加载
-extension RepositoryView {
-    /// 加载Git数据
-    private func loadGitData() async {
-        isLoadingGitData = true
-        
-        // 模拟分支数据（后续会替换为真实的GitService调用）
-        branches = [
-            Branch(name: "main", isCurrent: true, targetSha: "abc123"),
-            Branch(name: "develop", isCurrent: false, targetSha: "def456"),
-            Branch(name: "feature/new-ui", isCurrent: false, targetSha: "ghi789"),
-            Branch(name: "origin/main", isRemote: true, targetSha: "abc123"),
-            Branch(name: "origin/develop", isRemote: true, targetSha: "def456")
-        ]
-        
-        // 模拟标签数据
-        tags = [
-            Tag(name: "v1.0.0", targetSha: "abc123", isAnnotated: true),
-            Tag(name: "v1.1.0", targetSha: "def456", isAnnotated: true),
-            Tag(name: "v0.9.0", targetSha: "xyz789", isAnnotated: false)
-        ]
-        
-        // 模拟子模块数据（暂时为空）
-        submodules = []
-        
-        isLoadingGitData = false
-    }
-}
-
+// 移除Git数据加载扩展
 // MARK: - 列表项组件
 
-/// 分支行视图
 private struct BranchRowView: View {
     let branch: Branch
     let isSelected: Bool
     let onSelect: () -> Void
-    
     @State private var isHovered = false
     
     var body: some View {
@@ -398,14 +320,12 @@ private struct BranchRowView: View {
                     .font(.system(size: 14))
                     .foregroundStyle(branch.isRemote ? .blue : .green)
                     .frame(width: 20)
-                
                 VStack(alignment: .leading, spacing: 2) {
                     HStack {
                         Text(branch.shortName)
                             .font(.system(size: 14, weight: .medium))
                             .foregroundStyle(.primary)
                             .lineLimit(1)
-                        
                         if branch.isCurrent {
                             Text("当前")
                                 .font(.caption2)
@@ -415,17 +335,14 @@ private struct BranchRowView: View {
                                 .foregroundColor(.white)
                                 .clipShape(Capsule())
                         }
-                        
                         Spacer()
                     }
-                    
                     if let sha = branch.targetSha {
                         Text(String(sha.prefix(8)))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
-                
                 Spacer()
             }
             .padding(.horizontal, 12)
@@ -451,12 +368,10 @@ private struct BranchRowView: View {
     }
 }
 
-/// 标签行视图
 private struct TagRowView: View {
     let tag: Tag
     let isSelected: Bool
     let onSelect: () -> Void
-    
     @State private var isHovered = false
     
     var body: some View {
@@ -466,14 +381,12 @@ private struct TagRowView: View {
                     .font(.system(size: 14))
                     .foregroundStyle(.orange)
                     .frame(width: 20)
-                
                 VStack(alignment: .leading, spacing: 2) {
                     HStack {
                         Text(tag.name)
                             .font(.system(size: 14, weight: .medium))
                             .foregroundStyle(.primary)
                             .lineLimit(1)
-                        
                         if tag.isAnnotated {
                             Text("注释")
                                 .font(.caption2)
@@ -483,15 +396,12 @@ private struct TagRowView: View {
                                 .foregroundColor(.white)
                                 .clipShape(Capsule())
                         }
-                        
                         Spacer()
                     }
-                    
                     Text(String(tag.targetSha.prefix(8)))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                
                 Spacer()
             }
             .padding(.horizontal, 12)
@@ -518,7 +428,9 @@ private struct TagRowView: View {
 }
 
 #Preview {
+    // 更新Preview以使用ViewModel
     RepositoryView(
+        viewModel: MainViewModel.shared, // 使用共享实例
         repository: GitRepository(
             name: "FastGit", 
             path: "/Users/user/Documents/FastGit"

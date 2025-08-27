@@ -116,8 +116,8 @@ class GitService: ObservableObject {
     
     /// 获取提交历史
     /// - Parameter repository: 目标仓库
-    /// - Returns: 提交历史数组
-    func fetchCommitHistory(for repository: GitRepository) async -> [Commit] {
+    /// - Returns: 包含提交、分支和标签的元组
+    func fetchCommitHistory(for repository: GitRepository) async -> (commits: [Commit], branches: [Branch], tags: [Tag]) {
         isLoading = true
         errorMessage = nil
         
@@ -137,13 +137,13 @@ class GitService: ObservableObject {
             if swiftGitXRepo.isEmpty {
                 print("⚠️ 仓库为空，没有提交历史")
                 isLoading = false
-                return []
+                return ([], [], [])
             }
             
             if swiftGitXRepo.isHEADUnborn {
                 print("⚠️ 仓库HEAD未生成，可能是刚创建的空仓库")
                 isLoading = false
-                return []
+                return ([], [], [])
             }
             
             // 获取所有分支和标签信息
@@ -200,7 +200,7 @@ class GitService: ObservableObject {
                 print("   ... 及其他 \(commits.count - 3) 个提交")
             }
             
-            return commits
+            return (commits, branches, tags)
             
         } catch {
             // 为不同类型的错误提供更友好的错误信息
@@ -225,7 +225,7 @@ class GitService: ObservableObject {
             isLoading = false
             print("❌ \(errorMsg)")
             print("❌ 详细错误: \(error)")
-            return []
+            return ([], [], [])
         }
     }
     
