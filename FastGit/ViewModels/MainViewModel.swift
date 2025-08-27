@@ -26,7 +26,14 @@ class MainViewModel: ObservableObject {
     @Published var branches: [Branch] = []
     @Published var tags: [Tag] = []
     @Published var submodules: [String] = []
-    @Published var selectedFunctionItem: SelectedFunctionItem? = .expandableType(.localBranches)
+    @Published var selectedFunctionItem: SelectedFunctionItem? = .expandableType(.localBranches) {
+        didSet {
+            // 当选择项变化时，加载对应的提交历史
+            Task {
+                await loadHistoryForSelection()
+            }
+        }
+    }
     @Published var expandedSections: Set<ExpandableFunctionType> = [.localBranches]
 
     // MARK: - 私有属性
@@ -99,20 +106,48 @@ class MainViewModel: ObservableObject {
         guard let repository = currentRepository else { return }
         
         isLoading = true
-        let (fetchedCommits, fetchedBranches, fetchedTags) = await gitService.fetchCommitHistory(for: repository)
 
-        // 更新UI相关的属性
-        self.commits = fetchedCommits
+        // 1. Fetch sidebar data first
+        let (fetchedBranches, fetchedTags) = await gitService.fetchRepositorySidebarData(for: repository)
         self.branches = fetchedBranches
         self.tags = fetchedTags
-        self.submodules = [] // 暂不实现
+        self.submodules = [] // Not implemented yet
 
-        // 重置选择状态，默认选中本地分支类别
+        // 2. Fetch initial history from HEAD, using the sidebar data for annotations
+        self.commits = await gitService.fetchHistory(for: repository, branches: fetchedBranches, tags: fetchedTags, startingFrom: nil)
+
+        // 3. Reset selection state
         self.selectedFunctionItem = .expandableType(.localBranches)
-
-        // 默认展开本地分支
         self.expandedSections = [.localBranches]
 
+        isLoading = false
+    }
+
+    /// 根据当前选择项加载提交历史
+    private func loadHistoryForSelection() async {
+        guard let repository = currentRepository, let selection = selectedFunctionItem else { return }
+
+        var targetSha: String?
+
+        // 确定要加载历史的SHA
+        switch selection {
+        case .branchItem(let branchName, let isRemote):
+            targetSha = branches.first { $0.shortName == branchName && $0.isRemote == isRemote }?.targetSha
+        case .tagItem(let tagName):
+            targetSha = tags.first { $0.name == tagName }?.targetSha
+        default:
+            // 如果选择的不是分支或标签，则不重新加载历史
+            return
+        }
+
+        guard let sha = targetSha else {
+            print("⚠️ 无法为选择项找到目标SHA: \(selection)")
+            return
+        }
+
+        isLoading = true
+        // 使用已有的分支和标签数据来获取特定SHA的历史
+        self.commits = await gitService.fetchHistory(for: repository, branches: self.branches, tags: self.tags, startingFrom: sha)
         isLoading = false
     }
     

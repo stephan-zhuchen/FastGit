@@ -267,7 +267,7 @@ struct RepositoryView: View {
                     .font(.body)
                     .foregroundStyle(.secondary)
             }
-            HistoryView(repository: repository)
+            HistoryView(repository: repository, commits: viewModel.commits)
         }
     }
     
@@ -299,7 +299,7 @@ struct RepositoryView: View {
                     .font(.body)
                     .foregroundStyle(.secondary)
             }
-            HistoryView(repository: repository)
+            HistoryView(repository: repository, commits: viewModel.commits)
         }
     }
 }

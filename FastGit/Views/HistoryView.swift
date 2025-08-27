@@ -7,55 +7,35 @@
 
 import SwiftUI
 
-/// 提交历史视图
+/// 提交历史视图 (Refactored to be stateless)
 struct HistoryView: View {
-    let repository: GitRepository  // 添加仓库参数
-    @State private var commits: [Commit] = []
-    @State private var isLoading = false
-    @State private var errorMessage: String?
+    let repository: GitRepository
+    let commits: [Commit] // Data is now passed in
     
-    // 依赖
-    private let gitService = GitService.shared
+    // ViewModel to check loading state
+    @ObservedObject private var viewModel = MainViewModel.shared
     
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if isLoading {
-                // 加载状态
+            // Check loading/empty state from the view model or passed-in data
+            if viewModel.isLoading {
                 loadingView
-            } else if let errorMessage = errorMessage, !errorMessage.isEmpty {
-                // 错误状态
-                errorView(errorMessage)
             } else if commits.isEmpty {
-                // 空状态
                 emptyView
             } else {
-                // 提交历史表格
                 historyTableView
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onAppear {
-            // 当历史视图出现时，加载当前仓库的提交历史
-            Task {
-                await loadCommitHistory()
-            }
-        }
-        .onChange(of: repository) { _, _ in
-            // 当仓库变化时，重新加载提交历史
-            Task {
-                await loadCommitHistory()
-            }
-        }
     }
     
     // MARK: - 子视图
     
-    /// 加载状态视图
     private var loadingView: some View {
         VStack(spacing: 16) {
             ProgressView()
                 .scaleEffect(1.2)
-            Text("正在加载提交历史...")
+            Text("正在加载数据...")
                 .font(.headline)
                 .foregroundColor(.secondary)
         }
@@ -64,47 +44,6 @@ struct HistoryView: View {
         .clipShape(RoundedRectangle(cornerRadius: 10))
     }
     
-    /// 错误状态视图
-    /// - Parameter message: 错误信息
-    private func errorView(_ message: String) -> some View {
-        VStack(spacing: 20) {
-            Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 48))
-                .foregroundStyle(.orange)
-            
-            VStack(spacing: 8) {
-                Text("加载失败")
-                    .font(.headline)
-                    .foregroundColor(.primary)
-                
-                Text(message)
-                    .font(.body)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal)
-            }
-            
-            HStack(spacing: 12) {
-                Button("重试") {
-                    Task {
-                        errorMessage = nil
-                        await loadCommitHistory()
-                    }
-                }
-                .buttonStyle(.borderedProminent)
-                
-                Button("关闭") {
-                    errorMessage = nil
-                }
-                .buttonStyle(.bordered)
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(.regularMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-    }
-    
-    /// 空状态视图
     private var emptyView: some View {
         VStack(spacing: 16) {
             Image(systemName: "clock.badge.questionmark")
@@ -123,10 +62,9 @@ struct HistoryView: View {
         .clipShape(RoundedRectangle(cornerRadius: 10))
     }
     
-    /// 提交历史表格视图
     private var historyTableView: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // 表格标题栏
+            // Table header
             HStack {
                 Text("提交历史")
                     .font(.headline)
@@ -134,29 +72,13 @@ struct HistoryView: View {
                 
                 Spacer()
                 
-                HStack(spacing: 12) {
-                    // 提交计数标签
-                    Text("\(commits.count) 个提交")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(.quaternary)
-                        .clipShape(Capsule())
-                    
-                    // 刷新按钮
-                    Button(action: {
-                        Task {
-                            await loadCommitHistory()
-                        }
-                    }) {
-                        Image(systemName: "arrow.clockwise")
-                            .font(.system(size: 14, weight: .medium))
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .disabled(isLoading)
-                }
+                Text("\(commits.count) 个提交")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(.quaternary)
+                    .clipShape(Capsule())
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
@@ -164,9 +86,8 @@ struct HistoryView: View {
             
             Divider()
             
-            // 表格头部
+            // Table header row
             HStack(spacing: 0) {
-                // 提交信息列头
                 Text("路线图与主题")
                     .font(.caption)
                     .fontWeight(.semibold)
@@ -174,7 +95,6 @@ struct HistoryView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 12)
                 
-                // 作者列头
                 Text("作者")
                     .font(.caption)
                     .fontWeight(.semibold)
@@ -182,7 +102,6 @@ struct HistoryView: View {
                     .frame(width: 120, alignment: .leading)
                     .padding(.horizontal, 8)
                 
-                // SHA列头
                 Text("提交指纹")
                     .font(.caption)
                     .fontWeight(.semibold)
@@ -190,7 +109,6 @@ struct HistoryView: View {
                     .frame(width: 100, alignment: .center)
                     .padding(.horizontal, 8)
                 
-                // 时间列头
                 Text("提交时间")
                     .font(.caption)
                     .fontWeight(.semibold)
@@ -203,13 +121,12 @@ struct HistoryView: View {
             
             Divider()
             
-            // 提交数据表格
+            // Table content
             ScrollView {
                 LazyVStack(spacing: 0) {
                     ForEach(Array(commits.enumerated()), id: \.element.id) { index, commit in
                         CommitTableRowView(commit: commit, isEven: index % 2 == 0)
                             .onTapGesture {
-                                // TODO: 选择提交处理
                                 print("选择提交: \(commit.shortSha)")
                             }
                         
@@ -224,27 +141,19 @@ struct HistoryView: View {
         .background(.regularMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 10))
     }
-    
-    // MARK: - 私有方法
-    
-    /// 加载提交历史
-    private func loadCommitHistory() async {
-        isLoading = true
-        errorMessage = nil
-        
-        let (fetchedCommits, _, _) = await gitService.fetchCommitHistory(for: repository)
-        commits = fetchedCommits
-        
-        isLoading = false
-    }
 }
 
 #Preview {
+    // Preview needs to be updated to provide mock commits
     HistoryView(
         repository: GitRepository(
             name: "FastGit",
             path: "/Users/user/Documents/FastGit"
-        )
+        ),
+        commits: [
+            Commit(sha: "a1b2c3d4", message: "Initial commit", author: Author(name: "Test User", email: ""), date: Date(), parents: [], branches: ["main"], tags: ["v1.0"]),
+            Commit(sha: "e5f6g7h8", message: "feat: Add new feature", author: Author(name: "Test User", email: ""), date: Date(), parents: ["a1b2c3d4"], branches: [], tags: [])
+        ]
     )
     .frame(width: 800, height: 600)
 }

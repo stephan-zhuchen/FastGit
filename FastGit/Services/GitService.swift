@@ -114,52 +114,62 @@ class GitService: ObservableObject {
         }
     }
     
-    /// 获取提交历史
-    /// - Parameter repository: 目标仓库
-    /// - Returns: 包含提交、分支和标签的元组
-    func fetchCommitHistory(for repository: GitRepository) async -> (commits: [Commit], branches: [Branch], tags: [Tag]) {
+    /// 获取仓库的侧边栏数据（分支、标签）
+    func fetchRepositorySidebarData(for repository: GitRepository) async -> (branches: [Branch], tags: [Tag]) {
         isLoading = true
         errorMessage = nil
         
         do {
-            // 使用SwiftGitX获取真实的提交历史
             let repoURL = URL(fileURLWithPath: repository.path)
             let swiftGitXRepo = try Repository.open(at: repoURL)
             
-            print("🔍 仓库调试信息:")
-            print("   - 仓库路径: \(repository.path)")
-            print("   - 是否为空: \(swiftGitXRepo.isEmpty)")
-            print("   - HEAD是否未生成: \(swiftGitXRepo.isHEADUnborn)")
-            print("   - HEAD是否分离: \(swiftGitXRepo.isHEADDetached)")
-            print("   - 是否为bare仓库: \(swiftGitXRepo.isBare)")
-            
-            // 检查仓库是否为空或HEAD未生成
-            if swiftGitXRepo.isEmpty {
-                print("⚠️ 仓库为空，没有提交历史")
-                isLoading = false
-                return ([], [], [])
-            }
-            
-            if swiftGitXRepo.isHEADUnborn {
-                print("⚠️ 仓库HEAD未生成，可能是刚创建的空仓库")
-                isLoading = false
-                return ([], [], [])
-            }
-            
-            // 获取所有分支和标签信息
             let branches = try await fetchBranches(from: swiftGitXRepo)
             let tags = try await fetchTags(from: swiftGitXRepo)
             
-            // 创建 SHA -> 分支名和 SHA -> 标签名的映射
+            isLoading = false
+            return (branches, tags)
+        } catch {
+            let errorMsg = "获取仓库侧边栏数据失败: \(error.localizedDescription)"
+            errorMessage = errorMsg
+            isLoading = false
+            print("❌ \(errorMsg)")
+            return ([], [])
+        }
+    }
+
+    /// 获取提交历史
+    /// - Parameters:
+    ///   - repository: 目标仓库
+    ///   - branches: 用于标注提交的分支数组
+    ///   - tags: 用于标注提交的标签数组
+    ///   - sha: 起始提交的SHA，如果为nil则从HEAD开始
+    /// - Returns: 提交历史数组
+    func fetchHistory(for repository: GitRepository, branches: [Branch], tags: [Tag], startingFrom sha: String? = nil) async -> [Commit] {
+        isLoading = true
+        errorMessage = nil
+
+        do {
+            let repoURL = URL(fileURLWithPath: repository.path)
+            let swiftGitXRepo = try Repository.open(at: repoURL)
+
+            // Create the lookup maps from the provided data
             let branchMap = createCommitReferencesMap(branches: branches)
             let tagMap = createCommitReferencesMap(tags: tags)
             
-            print("🚀 开始获取提交历史...")
-            let commitSequence = try swiftGitXRepo.log()
+            print("🚀 开始获取提交历史 from \(sha ?? "HEAD")...")
+
+            let commitSequence: CommitSequence
+            if let startSHA = sha {
+                // Best guess for the SwiftGitX API
+                let startOID = try OID(hex: startSHA)
+                let startCommit = try swiftGitXRepo.commit.get(startOID)
+                commitSequence = try swiftGitXRepo.log(from: startCommit.id)
+            } else {
+                commitSequence = try swiftGitXRepo.log()
+            }
             
             var commits: [Commit] = []
             
-            // 使用CommitSequence迭代器获取提交历史
             for swiftGitXCommit in commitSequence {
                 let author = Author(name: swiftGitXCommit.author.name, email: swiftGitXCommit.author.email)
                 let parentShas: [String]
@@ -192,15 +202,7 @@ class GitService: ObservableObject {
             isLoading = false
             
             print("✅ 获取到 \(commits.count) 个提交记录")
-            for commit in commits.prefix(3) {
-                let refsInfo = commit.hasReferences ? " [分支: \(commit.branches.joined(separator: ", ")), 标签: \(commit.tags.joined(separator: ", "))]" : ""
-                print("   - \(commit.shortSha): \(commit.message)\(refsInfo)")
-            }
-            if commits.count > 3 {
-                print("   ... 及其他 \(commits.count - 3) 个提交")
-            }
-            
-            return (commits, branches, tags)
+            return commits
             
         } catch {
             // 为不同类型的错误提供更友好的错误信息
@@ -225,7 +227,7 @@ class GitService: ObservableObject {
             isLoading = false
             print("❌ \(errorMsg)")
             print("❌ 详细错误: \(error)")
-            return ([], [], [])
+            return []
         }
     }
     
