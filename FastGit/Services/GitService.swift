@@ -162,7 +162,9 @@ class GitService: ObservableObject {
             if let startSHA = sha {
                 // Corrected API call based on the provided source code
                 let startOID = try OID(hex: startSHA)
-                let startCommit: Commit = try swiftGitXRepo.show(id: startOID)
+                // Explicitly use SwiftGitX.Commit to avoid name collision with our own Commit model
+                let startCommit: SwiftGitX.Commit = try swiftGitXRepo.show(id: startOID)
+                // The log(from:commit) method does not throw
                 commitSequence = swiftGitXRepo.log(from: startCommit)
             } else {
                 commitSequence = try swiftGitXRepo.log()
