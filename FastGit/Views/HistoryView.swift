@@ -9,7 +9,9 @@ import SwiftUI
 
 /// 提交历史视图
 struct HistoryView: View {
-    let repository: GitRepository  // 添加仓库参数
+    let repository: GitRepository
+    let startingSha: String?
+
     @State private var commits: [GitCommit] = []
     @State private var isLoading = false
     @State private var errorMessage: String?
@@ -17,6 +19,12 @@ struct HistoryView: View {
     // 依赖
     private let gitService = GitService.shared
     
+    // 初始化
+    init(repository: GitRepository, startingSha: String? = nil) {
+        self.repository = repository
+        self.startingSha = startingSha
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if isLoading {
@@ -42,6 +50,12 @@ struct HistoryView: View {
         }
         .onChange(of: repository) { _, _ in
             // 当仓库变化时，重新加载提交历史
+            Task {
+                await loadCommitHistory()
+            }
+        }
+        .onChange(of: startingSha) { _, _ in
+            // 当起点变化时，重新加载
             Task {
                 await loadCommitHistory()
             }
@@ -232,7 +246,7 @@ struct HistoryView: View {
         isLoading = true
         errorMessage = nil
         
-        let (fetchedCommits, _, _) = await gitService.fetchCommitHistory(for: repository)
+        let (fetchedCommits, _, _) = await gitService.fetchCommitHistory(for: repository, startingFromSha: startingSha)
         commits = fetchedCommits
         
         isLoading = false

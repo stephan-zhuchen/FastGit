@@ -116,8 +116,9 @@ class GitService: ObservableObject {
     
     /// 获取提交历史
     /// - Parameter repository: 目标仓库
+    /// - Parameter startingFromSha: 可选的起始提交SHA，用于从特定点开始加载历史
     /// - Returns: 包含提交、分支和标签的元组
-    func fetchCommitHistory(for repository: GitRepository) async -> (commits: [GitCommit], branches: [GitBranch], tags: [GitTag]) {
+    func fetchCommitHistory(for repository: GitRepository, startingFromSha: String? = nil) async -> (commits: [GitCommit], branches: [GitBranch], tags: [GitTag]) {
         isLoading = true
         errorMessage = nil
         
@@ -154,8 +155,15 @@ class GitService: ObservableObject {
             let branchMap = createCommitReferencesMap(branches: branches)
             let tagMap = createCommitReferencesMap(tags: tags)
             
-            print("🚀 开始获取提交历史...")
-            let commitSequence = try swiftGitXRepo.log()
+            print("🚀 开始获取提交历史... (起点: \(startingFromSha ?? "HEAD"))")
+            let commitSequence: CommitSequence
+            if let startSha = startingFromSha {
+                let oid = try OID(hex: startSha)
+                let startCommit = try swiftGitXRepo.lookup(type: .commit, oid: oid) as! SwiftGitX.Commit
+                commitSequence = try swiftGitXRepo.log(from: startCommit)
+            } else {
+                commitSequence = try swiftGitXRepo.log()
+            }
             
             var commits: [GitCommit] = []
             

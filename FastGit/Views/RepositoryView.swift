@@ -267,7 +267,7 @@ struct RepositoryView: View {
                     .font(.body)
                     .foregroundStyle(.secondary)
             }
-            HistoryView(repository: repository)
+            HistoryView(repository: repository, startingSha: branch.targetSha)
         }
     }
     
@@ -299,7 +299,7 @@ struct RepositoryView: View {
                     .font(.body)
                     .foregroundStyle(.secondary)
             }
-            HistoryView(repository: repository)
+            HistoryView(repository: repository, startingSha: tag.targetSha)
         }
     }
 }
