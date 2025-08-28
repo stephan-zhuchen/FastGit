@@ -8,7 +8,7 @@
 import Foundation
 
 /// Git标签模型
-struct Tag: Identifiable, Equatable {
+struct GitTag: Identifiable, Equatable {
     let id = UUID()
     let name: String
     let targetSha: String

@@ -184,7 +184,7 @@ struct RepositoryView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     
-    private func branchListView(branches: [Branch], title: String) -> some View {
+    private func branchListView(branches: [GitBranch], title: String) -> some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
                 Text(title)
@@ -236,7 +236,7 @@ struct RepositoryView: View {
         }
     }
     
-    private func branchDetailView(branch: Branch) -> some View {
+    private func branchDetailView(branch: GitBranch) -> some View {
         VStack(alignment: .leading, spacing: 20) {
             HStack {
                 Text("分支: \(branch.shortName)")
@@ -271,7 +271,7 @@ struct RepositoryView: View {
         }
     }
     
-    private func tagDetailView(tag: Tag) -> some View {
+    private func tagDetailView(tag: GitTag) -> some View {
         VStack(alignment: .leading, spacing: 20) {
             HStack {
                 Text("标签: \(tag.name)")
@@ -308,7 +308,7 @@ struct RepositoryView: View {
 // MARK: - 列表项组件
 
 private struct BranchRowView: View {
-    let branch: Branch
+    let branch: GitBranch
     let isSelected: Bool
     let onSelect: () -> Void
     @State private var isHovered = false
@@ -369,7 +369,7 @@ private struct BranchRowView: View {
 }
 
 private struct TagRowView: View {
-    let tag: Tag
+    let tag: GitTag
     let isSelected: Bool
     let onSelect: () -> Void
     @State private var isHovered = false

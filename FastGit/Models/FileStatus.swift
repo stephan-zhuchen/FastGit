@@ -8,13 +8,13 @@
 import Foundation
 
 /// Git文件状态模型
-struct FileStatus: Identifiable, Equatable {
+struct GitFileStatus: Identifiable, Equatable {
     let id = UUID()
     let path: String
-    let status: GitFileStatus
+    let status: GitFileStatusType
     let isStaged: Bool
     
-    init(path: String, status: GitFileStatus, isStaged: Bool = false) {
+    init(path: String, status: GitFileStatusType, isStaged: Bool = false) {
         self.path = path
         self.status = status
         self.isStaged = isStaged
@@ -33,7 +33,7 @@ struct FileStatus: Identifiable, Equatable {
 }
 
 /// Git文件状态枚举
-enum GitFileStatus: String, CaseIterable {
+enum GitFileStatusType: String, CaseIterable {
     case added = "A"       // 新增文件
     case modified = "M"    // 修改文件
     case deleted = "D"     // 删除文件

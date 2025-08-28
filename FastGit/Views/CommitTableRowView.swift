@@ -9,7 +9,7 @@ import SwiftUI
 
 /// 提交历史表格行视图 - 模仿SourceGit的界面设计
 struct CommitTableRowView: View {
-    let commit: Commit
+    let commit: GitCommit
     let isEven: Bool
     
     var body: some View {
@@ -238,10 +238,10 @@ struct BranchTagBadge: View {
     VStack(spacing: 1) {
         // 带分支和标签的提交
         CommitTableRowView(
-            commit: Commit(
+            commit: GitCommit(
                 sha: "a1b2c3d4e5f6789012345678901234567890abcd",
                 message: "feat: add ncurses static lib",
-                author: Author(name: "Zhu Chen", email: "zhu@example.com"),
+                author: GitAuthor(name: "Zhu Chen", email: "zhu@example.com"),
                 date: Date(),
                 parents: [],
                 branches: ["develop", "origin/develop"],
@@ -252,10 +252,10 @@ struct BranchTagBadge: View {
         
         // 普通提交
         CommitTableRowView(
-            commit: Commit(
+            commit: GitCommit(
                 sha: "b2c3d4e5f6789012345678901234567890abcdef",
                 message: "fix: Pe32 disassembly and iasl tool issue on Linux",
-                author: Author(name: "Zhu Chen", email: "zhu@example.com"),
+                author: GitAuthor(name: "Zhu Chen", email: "zhu@example.com"),
                 date: Date().addingTimeInterval(-3600),
                 parents: []
             ),

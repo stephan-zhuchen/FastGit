@@ -8,12 +8,12 @@
 import Foundation
 
 /// Git提交模型
-struct Commit: Identifiable, Equatable {
+struct GitCommit: Identifiable, Equatable {
     let id = UUID()
     let sha: String
     let shortSha: String
     let message: String
-    let author: Author
+    let author: GitAuthor
     let date: Date
     let parents: [String]
     let branches: [String] // 指向此提交的分支名称
@@ -22,7 +22,7 @@ struct Commit: Identifiable, Equatable {
     init(
         sha: String, 
         message: String, 
-        author: Author, 
+        author: GitAuthor,
         date: Date, 
         parents: [String] = [],
         branches: [String] = [],
@@ -45,7 +45,7 @@ struct Commit: Identifiable, Equatable {
 }
 
 /// Git提交作者信息
-struct Author: Equatable {
+struct GitAuthor: Equatable {
     let name: String
     let email: String
     

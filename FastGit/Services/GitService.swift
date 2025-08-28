@@ -117,7 +117,7 @@ class GitService: ObservableObject {
     /// 获取提交历史
     /// - Parameter repository: 目标仓库
     /// - Returns: 包含提交、分支和标签的元组
-    func fetchCommitHistory(for repository: GitRepository) async -> (commits: [Commit], branches: [Branch], tags: [Tag]) {
+    func fetchCommitHistory(for repository: GitRepository) async -> (commits: [GitCommit], branches: [GitBranch], tags: [GitTag]) {
         isLoading = true
         errorMessage = nil
         
@@ -157,11 +157,11 @@ class GitService: ObservableObject {
             print("🚀 开始获取提交历史...")
             let commitSequence = try swiftGitXRepo.log()
             
-            var commits: [Commit] = []
+            var commits: [GitCommit] = []
             
             // 使用CommitSequence迭代器获取提交历史
             for swiftGitXCommit in commitSequence {
-                let author = Author(name: swiftGitXCommit.author.name, email: swiftGitXCommit.author.email)
+                let author = GitAuthor(name: swiftGitXCommit.author.name, email: swiftGitXCommit.author.email)
                 let parentShas: [String]
                 do {
                     parentShas = try swiftGitXCommit.parents.map { $0.id.hex }
@@ -174,7 +174,7 @@ class GitService: ObservableObject {
                 let commitBranches = branchMap[commitSha] ?? []
                 let commitTags = tagMap[commitSha] ?? []
                 
-                let fastGitCommit = Commit(
+                let fastGitCommit = GitCommit(
                     sha: commitSha,
                     message: swiftGitXCommit.message,
                     author: author,
@@ -232,8 +232,8 @@ class GitService: ObservableObject {
     /// 获取仓库的所有分支
     /// - Parameter repo: SwiftGitX 仓库对象
     /// - Returns: 分支数组
-    private func fetchBranches(from repo: Repository) async throws -> [Branch] {
-        var branches: [Branch] = []
+    private func fetchBranches(from repo: Repository) async throws -> [GitBranch] {
+        var branches: [GitBranch] = []
         
         // 获取当前分支
         let currentBranchName: String?
@@ -250,7 +250,7 @@ class GitService: ObservableObject {
             let localBranches = try repo.branch.list(.local)
             for branch in localBranches {
                 let isCurrent = branch.name == currentBranchName
-                let fastGitBranch = Branch(
+                let fastGitBranch = GitBranch(
                     name: branch.name,
                     isCurrent: isCurrent,
                     isRemote: false,
@@ -266,7 +266,7 @@ class GitService: ObservableObject {
         do {
             let remoteBranches = try repo.branch.list(.remote)
             for branch in remoteBranches {
-                let fastGitBranch = Branch(
+                let fastGitBranch = GitBranch(
                     name: branch.name,
                     isCurrent: false,
                     isRemote: true,
@@ -285,8 +285,8 @@ class GitService: ObservableObject {
     /// 获取仓库的所有标签
     /// - Parameter repo: SwiftGitX 仓库对象
     /// - Returns: 标签数组
-    private func fetchTags(from repo: Repository) async throws -> [Tag] {
-        var tags: [Tag] = []
+    private func fetchTags(from repo: Repository) async throws -> [GitTag] {
+        var tags: [GitTag] = []
         
         do {
             let swiftGitXTags = try repo.tag.list()
@@ -307,7 +307,7 @@ class GitService: ObservableObject {
                     date = swiftGitXTag.tagger?.date
                 }
                 
-                let tag = Tag(
+                let tag = GitTag(
                     name: swiftGitXTag.name,
                     targetSha: swiftGitXTag.target.id.hex,
                     message: message,
@@ -329,7 +329,7 @@ class GitService: ObservableObject {
     /// 创建提交SHA到引用名称的映射
     /// - Parameter branches: 分支数组
     /// - Returns: SHA -> [引用名称] 的映射
-    private func createCommitReferencesMap(branches: [Branch]) -> [String: [String]] {
+    private func createCommitReferencesMap(branches: [GitBranch]) -> [String: [String]] {
         var map: [String: [String]] = [:]
         for branch in branches {
             if let sha = branch.targetSha {
@@ -345,7 +345,7 @@ class GitService: ObservableObject {
     /// 创建提交SHA到标签名称的映射
     /// - Parameter tags: 标签数组
     /// - Returns: SHA -> [标签名称] 的映射
-    private func createCommitReferencesMap(tags: [Tag]) -> [String: [String]] {
+    private func createCommitReferencesMap(tags: [GitTag]) -> [String: [String]] {
         var map: [String: [String]] = [:]
         for tag in tags {
             if map[tag.targetSha] == nil {

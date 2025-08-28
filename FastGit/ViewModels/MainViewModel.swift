@@ -17,14 +17,14 @@ class MainViewModel: ObservableObject {
     
     // MARK: - 发布属性
     @Published var currentRepository: GitRepository?
-    @Published var commits: [Commit] = []
+    @Published var commits: [GitCommit] = []
     @Published var isLoading = false
     @Published var errorMessage: String?
     @Published var showingFilePicker = false
     
     // MARK: - Function List State
-    @Published var branches: [Branch] = []
-    @Published var tags: [Tag] = []
+    @Published var branches: [GitBranch] = []
+    @Published var tags: [GitTag] = []
     @Published var submodules: [String] = []
     @Published var selectedFunctionItem: SelectedFunctionItem? = .expandableType(.localBranches)
     @Published var expandedSections: Set<ExpandableFunctionType> = [.localBranches]

@@ -94,8 +94,8 @@ struct FunctionListView: View {
     
     // Git数据
     let repository: GitRepository?
-    let branches: [Branch]
-    let tags: [Tag]
+    let branches: [GitBranch]
+    let tags: [GitTag]
     let submodules: [String]  // 暂时用字符串数组表示子模块
     
     var body: some View {
@@ -440,14 +440,14 @@ private struct ExpandableItemButton: View {
         expandedSections: .constant([.localBranches, .tags]),
         repository: GitRepository(name: "FastGit", path: "/Users/user/FastGit"),
         branches: [
-            Branch(name: "main", isCurrent: true),
-            Branch(name: "develop"),
-            Branch(name: "origin/main", isRemote: true),
-            Branch(name: "origin/develop", isRemote: true)
+            GitBranch(name: "main", isCurrent: true),
+            GitBranch(name: "develop"),
+            GitBranch(name: "origin/main", isRemote: true),
+            GitBranch(name: "origin/develop", isRemote: true)
         ],
         tags: [
-            Tag(name: "v1.0.0", targetSha: "abc123"),
-            Tag(name: "v1.1.0", targetSha: "def456")
+            GitTag(name: "v1.0.0", targetSha: "abc123"),
+            GitTag(name: "v1.1.0", targetSha: "def456")
         ],
         submodules: ["SwiftGitX", "TestFramework"]
     )

@@ -8,7 +8,7 @@
 import Foundation
 
 /// Git分支模型
-struct Branch: Identifiable, Equatable {
+struct GitBranch: Identifiable, Equatable {
     let id = UUID()
     let name: String
     let shortName: String

@@ -10,7 +10,7 @@ import SwiftUI
 /// 提交历史视图
 struct HistoryView: View {
     let repository: GitRepository  // 添加仓库参数
-    @State private var commits: [Commit] = []
+    @State private var commits: [GitCommit] = []
     @State private var isLoading = false
     @State private var errorMessage: String?
     
