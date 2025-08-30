@@ -12,6 +12,8 @@ struct HistoryView: View {
     let repository: GitRepository
     let startingSha: String?
 
+    @State private var selectedCommitSha: String?
+    
     @State private var commits: [GitCommit] = []
     @State private var isLoading = false
     @State private var errorMessage: String?
@@ -20,8 +22,6 @@ struct HistoryView: View {
     @State private var searchText = ""
     @State private var isCaseSensitive = false
     @State private var isWholeWord = false
-    
-    @State private var tableID = UUID()
     
     // 依赖
     private let gitService = GitService.shared
@@ -52,18 +52,14 @@ struct HistoryView: View {
     
     private func checkMatch(in text: String, for pattern: String) -> Bool {
         if isWholeWord {
-            // Whole word matching logic
             let patternToSearch = isCaseSensitive ? pattern : pattern.lowercased()
             let textToSearchIn = isCaseSensitive ? text : text.lowercased()
-            
-            // Use regular expression for robust whole word search
             if let regex = try? NSRegularExpression(pattern: "\\b\(NSRegularExpression.escapedPattern(for: patternToSearch))\\b") {
                 let range = NSRange(textToSearchIn.startIndex..., in: textToSearchIn)
                 return regex.firstMatch(in: textToSearchIn, options: [], range: range) != nil
             }
             return false
         } else {
-            // Substring matching logic
             if isCaseSensitive {
                 return text.contains(pattern)
             } else {
@@ -82,7 +78,7 @@ struct HistoryView: View {
             } else if commits.isEmpty {
                 emptyView
             } else {
-                historyTableView
+                historyListView
             }
         }
         .frame(minWidth: 650, minHeight: 400)
@@ -99,91 +95,123 @@ struct HistoryView: View {
     
     // MARK: - Subviews
     
-    private var historyTableView: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // 表格标题栏
-            HStack {
-                Text("提交历史")
-                    .font(.headline)
-                    .fontWeight(.semibold)
-                
-                Spacer()
-                
-                HStack(spacing: 12) {
-                    CustomSearchBar(
-                        searchText: $searchText,
-                        isCaseSensitive: $isCaseSensitive,
-                        isWholeWord: $isWholeWord
-                    )
-                    .frame(width: 200)
-
-                    Text("\(filteredCommits.count) 个提交")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(.quaternary)
-                        .clipShape(Capsule())
-                    
-                    Button(action: {
-                        Task { await loadCommitHistory() }
-                    }) {
-                        Image(systemName: "arrow.clockwise")
-                            .font(.system(size: 14, weight: .medium))
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .disabled(isLoading)
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-            .background(.regularMaterial)
+    private var historyToolbar: some View {
+        HStack {
+            Text("提交历史")
+                .font(.headline)
+                .fontWeight(.semibold)
             
+            Spacer()
+            
+            HStack(spacing: 12) {
+                CustomSearchBar(
+                    searchText: $searchText,
+                    isCaseSensitive: $isCaseSensitive,
+                    isWholeWord: $isWholeWord
+                )
+                .frame(width: 200)
+
+                Text("\(filteredCommits.count) 个提交")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(.quaternary)
+                    .clipShape(Capsule())
+                
+                Button(action: {
+                    Task { await loadCommitHistory() }
+                }) {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 14, weight: .medium))
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(isLoading)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(.regularMaterial)
+    }
+
+    private var listHeader: some View {
+        HStack(spacing: 0) {
+            Text("Description")
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 12)
+            Text("Author")
+                .frame(width: 120, alignment: .leading)
+                .padding(.horizontal, 8)
+            Text("Commit")
+                .frame(width: 100, alignment: .center)
+                .padding(.horizontal, 8)
+            Text("Date")
+                .frame(width: 140, alignment: .trailing)
+                .padding(.horizontal, 12)
+        }
+        .font(.subheadline)
+        .fontWeight(.semibold)
+        .foregroundStyle(.secondary)
+        .padding(.vertical, 8)
+    }
+    
+    // --- MODIFIED: 整个列表视图现在由 ScrollViewReader 包裹 ---
+    private var historyListView: some View {
+        VStack(spacing: 0) {
+            historyToolbar
             Divider()
             
-            Table(filteredCommits) {
-                // ... (Table columns remain the same)
-                TableColumn("路线图与主题", content: { commit in
-                    VStack(alignment: .leading, spacing: 4) {
-                        if commit.hasReferences {
-                            HStack(spacing: 4) {
-                                ForEach(commit.branches, id: \.self) { branchName in
-                                    BranchTagBadge(text: branchName, type: .branch, isLocalBranch: !branchName.contains("/"))
+            VStack(spacing: 0) {
+                listHeader
+                Divider()
+                // --- ADDED: 添加 ScrollViewReader ---
+                ScrollViewReader { scrollViewProxy in
+                    ScrollView {
+                        LazyVStack(spacing: 0) {
+                            ForEach(Array(filteredCommits.enumerated()), id: \.element.id) { index, commit in
+                                // 将每一行内容放入一个 VStack 中，并为其添加 .id()
+                                VStack(spacing: 0) {
+                                    CommitTableRowView(commit: commit, isEven: index.isMultiple(of: 2))
+                                        .background(selectedCommitSha == commit.sha ? Color.accentColor.opacity(0.2) : Color.clear)
+                                        .onTapGesture {
+                                            withAnimation(.easeInOut(duration: 0.2)) {
+                                                if selectedCommitSha == commit.sha {
+                                                    selectedCommitSha = nil
+                                                } else {
+                                                    selectedCommitSha = commit.sha
+                                                }
+                                            }
+                                        }
+                                    
+                                    if selectedCommitSha == commit.sha {
+                                        // --- MODIFIED: 传入 onSelectParent 回调 ---
+                                        CommitDetailView(commit: commit, repository: repository, onSelectParent: { parentSha in
+                                            // 使用 withAnimation 实现平滑滚动
+                                            withAnimation(.easeInOut) {
+                                                // 1. 更新选择项为父提交
+                                                selectedCommitSha = parentSha
+                                                // 2. 滚动到父提交的位置
+                                                scrollViewProxy.scrollTo(parentSha, anchor: .center)
+                                            }
+                                        })
+                                        .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                                    }
+                                    
+                                    Divider()
                                 }
-                                ForEach(commit.tags, id: \.self) { tagName in
-                                    BranchTagBadge(text: tagName, type: .tag)
-                                }
-                                Spacer()
+                                // --- ADDED: 为每一行设置唯一的 ID ---
+                                .id(commit.sha)
                             }
                         }
-                        Text(commit.message.trimmingCharacters(in: .whitespacesAndNewlines))
-                            .font(.system(size: 13))
                     }
-                    .padding(.vertical, 4)
-                })
-                .width(min: 250, ideal: 400)
-                
-                TableColumn("作者", content: { commit in Text(commit.author.name) })
-                .width(min: 80, ideal: 120, max: 200)
-
-                TableColumn("提交指纹", content: { commit in Text(commit.shortSha).font(.system(.body, design: .monospaced)) })
-                .width(min: 60, ideal: 60, max: 100)
-
-                TableColumn("提交时间", content: { commit in Text(formatCommitDate(commit.date)).frame(maxWidth: .infinity, alignment: .trailing) })
-                .width(min: 120, ideal: 120, max: 150)
+                }
             }
-            .id(tableID)
-            .tableStyle(.inset(alternatesRowBackgrounds: true))
         }
         .background(.regularMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 10))
-        .onChange(of: searchText) { _, _ in tableID = UUID() }
-        .onChange(of: isCaseSensitive) { _, _ in tableID = UUID() }
-        .onChange(of: isWholeWord) { _, _ in tableID = UUID() }
     }
     
-    // ... (loadingView, errorView, emptyView remain the same)
     private var loadingView: some View {
         VStack(spacing: 16) {
             ProgressView().scaleEffect(1.2)
@@ -233,8 +261,6 @@ struct HistoryView: View {
     }
 }
 
-// ** REMOVED: Custom search components are now in SharedViews.swift **
-// ** 移除：自定义搜索组件现在位于 SharedViews.swift 文件中 **
 
 #Preview {
     HistoryView(

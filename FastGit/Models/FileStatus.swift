@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import SwiftUI
 
 /// Git文件状态模型
 struct GitFileStatus: Identifiable, Equatable {
@@ -58,14 +59,15 @@ enum GitFileStatusType: String, CaseIterable {
     }
     
     /// 状态颜色 (用于UI显示)
-    var colorName: String {
+    var displayColor: Color {
         switch self {
-        case .added, .untracked: return "green"
-        case .modified: return "orange"
-        case .deleted: return "red"
-        case .renamed, .copied: return "blue"
-        case .ignored: return "gray"
-        case .typeChanged: return "purple"
+        case .added, .untracked: return .green
+        case .modified: return .orange
+        case .deleted: return .red
+        case .renamed, .copied: return .blue
+        case .ignored: return .gray
+        case .typeChanged: return .purple
         }
     }
 }
+

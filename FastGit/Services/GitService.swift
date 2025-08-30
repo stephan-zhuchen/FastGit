@@ -459,6 +459,62 @@ class GitService: ObservableObject {
         }
         return map
     }
+    
+    /// 获取指定提交的变更文件列表
+    /// - Parameters:
+    ///   - commit: 目标提交
+    ///   - repository: 所在仓库
+    /// - Returns: 文件状态列表
+    func fetchChanges(for commit: GitCommit, in repository: GitRepository) async -> [GitFileStatus] {
+        print("🔍 Fetching changes for commit: \(commit.shortSha)")
+        var changes: [GitFileStatus] = []
+        
+        do {
+            let repoURL = URL(fileURLWithPath: repository.path)
+            let swiftGitXRepo = try Repository.open(at: repoURL)
+            
+            // 1. 从我们的 GitCommit 模型找到 SwiftGitX 的 Commit 对象
+            let oid = try OID(hex: commit.sha)
+            let swiftGitXCommit: Commit = try swiftGitXRepo.show(id: oid)
+            
+            // 2. 获取此提交与其父提交的差异 [cite: Repository.swift]
+            let diff = try swiftGitXRepo.diff(commit: swiftGitXCommit)
+            
+            // 3. 将 diff.changes 转换为我们的 GitFileStatus 模型
+            for delta in diff.changes {
+                let path = delta.newFile.path
+                var statusType: GitFileStatusType
+                
+                switch delta.type {
+                case .added:
+                    statusType = .added
+                case .deleted:
+                    statusType = .deleted
+                case .modified:
+                    statusType = .modified
+                case .renamed:
+                    statusType = .renamed
+                case .copied:
+                    statusType = .copied
+                case .typeChange:
+                    statusType = .typeChanged
+                default:
+                    // 对于此上下文，我们可以忽略其他类型
+                    continue
+                }
+                
+                let fileStatus = GitFileStatus(path: path, status: statusType, isStaged: false)
+                changes.append(fileStatus)
+            }
+            
+            print("✅ Found \(changes.count) changes for commit \(commit.shortSha)")
+            
+        } catch {
+            print("❌ Failed to fetch changes for commit \(commit.shortSha): \(error.localizedDescription)")
+        }
+        
+        return changes
+    }
 
 }
 
