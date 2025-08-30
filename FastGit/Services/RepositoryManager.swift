@@ -48,8 +48,6 @@ class RepositoryManager: ObservableObject {
         
         // 保存到UserDefaults
         saveRecentRepositories()
-        
-        print("✅ 新仓库已添加到列表首位: \(repository.displayName)")
     }
     
     /// 设置当前仓库
@@ -63,8 +61,6 @@ class RepositoryManager: ObservableObject {
             
             // 添加到最近列表（新仓库排在首位）
             addNewRepository(repository)
-            
-            print("✅ 当前仓库已设置: \(repository.displayName)")
         } else {
             userDefaults.removeObject(forKey: AppConfig.UserDefaultsKeys.lastOpenedRepository)
             print("✅ 当前仓库已清除")
@@ -106,11 +102,9 @@ class RepositoryManager: ObservableObject {
                 }
                 
                 saveRecentRepositories()
-                print("✅ 新仓库已添加到列表末尾: \(repository.displayName)")
             }
         } else {
             userDefaults.removeObject(forKey: AppConfig.UserDefaultsKeys.lastOpenedRepository)
-            print("✅ 当前仓库已清除")
         }
     }
     
@@ -125,11 +119,8 @@ class RepositoryManager: ObservableObject {
             
             // 添加新仓库到列表首位
             addNewRepository(repository)
-            
-            print("✅ 新仓库已设置为当前仓库: \(repository.displayName)")
         } else {
             userDefaults.removeObject(forKey: AppConfig.UserDefaultsKeys.lastOpenedRepository)
-            print("✅ 当前仓库已清除")
         }
     }
     

@@ -161,7 +161,7 @@ struct FunctionListView: View {
         VStack(spacing: 8) {
             // 标题
             HStack {
-                Text("仓库结构")
+                Text("仓库")
                     .font(.headline)
                     .fontWeight(.semibold)
                     .foregroundStyle(.primary)

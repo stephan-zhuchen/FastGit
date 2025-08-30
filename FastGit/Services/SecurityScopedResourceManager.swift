@@ -62,8 +62,6 @@ class SecurityScopedResourceManager: ObservableObject {
             
             // 保存到UserDefaults
             saveBookmarks()
-            
-            print("✅ 已为路径创建安全书签: \(path)")
             return true
         } catch {
             print("❌ 创建安全书签失败: \(error.localizedDescription)")
@@ -82,8 +80,6 @@ class SecurityScopedResourceManager: ObservableObject {
         activeBookmarks.removeValue(forKey: path)
         activeURLs.removeValue(forKey: path)
         saveBookmarks()
-        
-        print("🗑️ 已移除路径的安全书签: \(path)")
     }
     
     /// 清除所有书签
@@ -96,8 +92,6 @@ class SecurityScopedResourceManager: ObservableObject {
         activeBookmarks.removeAll()
         activeURLs.removeAll()
         userDefaults.removeObject(forKey: bookmarksKey)
-        
-        print("🗑️ 已清除所有安全书签")
     }
     
     // MARK: - 私有方法
@@ -130,7 +124,6 @@ class SecurityScopedResourceManager: ObservableObject {
             // 开始访问安全作用域资源
             if url.startAccessingSecurityScopedResource() {
                 activeURLs[path] = url
-                print("🔓 已恢复安全作用域访问: \(path)")
                 return url
             } else {
                 print("❌ 无法开始访问安全作用域资源: \(path)")
@@ -194,12 +187,11 @@ class SecurityScopedResourceManager: ObservableObject {
         }
         
         activeBookmarks = savedBookmarks
-        print("📖 已加载 \(savedBookmarks.count) 个安全书签")
         
         // 尝试恢复所有书签的访问权限
         for (path, bookmarkData) in savedBookmarks {
             if let _ = restoreURL(from: bookmarkData, for: path) {
-                print("✅ 已恢复书签访问权限: \(path)")
+//                print("✅ 已恢复书签访问权限: \(path)")
             }
         }
     }

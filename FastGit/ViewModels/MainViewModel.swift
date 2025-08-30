@@ -68,7 +68,6 @@ class MainViewModel: ObservableObject {
         let securityManager = SecurityScopedResourceManager.shared
         let bookmarkCreated = securityManager.createBookmark(for: url)
         if bookmarkCreated {
-            print("✅ 已为新仓库创建安全书签: \(path)")
         } else {
             print("⚠️ 为新仓库创建安全书签失败: \(path)")
         }

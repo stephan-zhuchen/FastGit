@@ -146,7 +146,6 @@ struct ContentView: View {
         if let newRepository = viewModel.currentRepository {
             openRepositories.append(newRepository)
             selectedTab = openRepositories.count
-            print("✅ 新仓库已添加到Tab: \(newRepository.displayName), Tab索引: \(selectedTab)")
         }
     }
     

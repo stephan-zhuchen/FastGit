@@ -50,7 +50,6 @@ class GitService: ObservableObject {
         do {
             try SwiftGitX.initialize()
             isSwiftGitXInitialized = true
-            print("✅ SwiftGitX 初始化成功")
         } catch {
             print("❌ SwiftGitX 初始化失败: \(error)")
         }
