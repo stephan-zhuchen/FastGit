@@ -156,7 +156,6 @@ struct HistoryView: View {
         .padding(.vertical, 8)
     }
     
-    // --- MODIFIED: 整个列表视图现在由 ScrollViewReader 包裹 ---
     private var historyListView: some View {
         VStack(spacing: 0) {
             historyToolbar
@@ -165,12 +164,10 @@ struct HistoryView: View {
             VStack(spacing: 0) {
                 listHeader
                 Divider()
-                // --- ADDED: 添加 ScrollViewReader ---
                 ScrollViewReader { scrollViewProxy in
                     ScrollView {
                         LazyVStack(spacing: 0) {
                             ForEach(Array(filteredCommits.enumerated()), id: \.element.id) { index, commit in
-                                // 将每一行内容放入一个 VStack 中，并为其添加 .id()
                                 VStack(spacing: 0) {
                                     CommitTableRowView(commit: commit, isEven: index.isMultiple(of: 2))
                                         .background(selectedCommitSha == commit.sha ? Color.accentColor.opacity(0.2) : Color.clear)
@@ -184,15 +181,16 @@ struct HistoryView: View {
                                             }
                                         }
                                     
+                                    // --- FIX: Correctly place the conditional view ---
                                     if selectedCommitSha == commit.sha {
-                                        // --- MODIFIED: 传入 onSelectParent 回调 ---
                                         CommitDetailView(commit: commit, repository: repository, onSelectParent: { parentSha in
-                                            // 使用 withAnimation 实现平滑滚动
                                             withAnimation(.easeInOut) {
-                                                // 1. 更新选择项为父提交
                                                 selectedCommitSha = parentSha
-                                                // 2. 滚动到父提交的位置
                                                 scrollViewProxy.scrollTo(parentSha, anchor: .center)
+                                            }
+                                        }, onClose: {
+                                            withAnimation {
+                                                selectedCommitSha = nil
                                             }
                                         })
                                         .transition(.opacity.combined(with: .scale(scale: 0.95)))
@@ -200,7 +198,6 @@ struct HistoryView: View {
                                     
                                     Divider()
                                 }
-                                // --- ADDED: 为每一行设置唯一的 ID ---
                                 .id(commit.sha)
                             }
                         }
