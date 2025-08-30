@@ -11,9 +11,14 @@ import SwiftUI
 struct RepositoryView: View {
     @ObservedObject var viewModel: MainViewModel
     let repository: GitRepository
-    let onClose: ((GitRepository) -> Void)?  // 关闭Tab的回调
+    let onClose: ((GitRepository) -> Void)?
 
-    // 修改初始化方法以接收ViewModel
+    // ** ADDED: State for resizable sidebar **
+    // ** 新增：用于可变侧边栏的状态 **
+    @AppStorage("sidebarWidth") private var sidebarWidth: Double = 250.0
+    private let minSidebarWidth: Double = 200
+    private let maxSidebarWidth: Double = 400
+
     init(
         viewModel: MainViewModel,
         repository: GitRepository,
@@ -26,7 +31,8 @@ struct RepositoryView: View {
     
     var body: some View {
         HStack(spacing: 0) {
-            // 左侧功能列表导航栏 - 使用ViewModel的数据和状态
+            // ** MODIFIED: Apply resizable width **
+            // ** 修改：应用可变的宽度 **
             FunctionListView(
                 selectedItem: $viewModel.selectedFunctionItem,
                 expandedSections: $viewModel.expandedSections,
@@ -35,12 +41,14 @@ struct RepositoryView: View {
                 tags: viewModel.tags,
                 submodules: viewModel.submodules
             )
+            .frame(width: sidebarWidth)
             
-            Divider()
+            // ** ADDED: Draggable divider **
+            // ** 新增：可拖动的分隔线 **
+            DraggableDivider(width: $sidebarWidth, minWidth: minSidebarWidth, maxWidth: maxSidebarWidth)
             
             // 右侧内容区域
             VStack(spacing: 0) {
-                // 上方工具栏
                 RepositoryToolbarView(onClose: nil)
                     .padding(.horizontal, 16)
                     .padding(.top, 16)
@@ -48,7 +56,6 @@ struct RepositoryView: View {
                 Divider()
                     .padding(.horizontal, 16)
                 
-                // 下方主体内容区域 - 使用ViewModel的状态
                 Group {
                     if let item = viewModel.selectedFunctionItem {
                         contentView(for: item)
@@ -62,8 +69,10 @@ struct RepositoryView: View {
         }
         .navigationTitle(repository.displayName)
         .navigationSubtitle(repository.path)
-        // 移除.task和.onChange，数据加载由ViewModel触发
     }
+    
+    // ... (The rest of the file remains the same)
+    // ... (文件的其余部分保持不变)
     
     // MARK: - 子视图
     
@@ -83,19 +92,18 @@ struct RepositoryView: View {
             }
             
         case .expandableType(let type):
+            // This case might not be strictly necessary if a default branch is always selected,
+            // but it's good for handling the state where a category is selected but no specific item.
+            // 如果总是默认选中一个分支，这个 case 可能不是必需的，但它可以处理只选中了分类但未选中具体项的状态。
             switch type {
             case .localBranches:
                 if viewModel.branches.filter({ !$0.isRemote }).isEmpty {
                     emptyStateView(for: "本地分支", icon: "point.3.connected.trianglepath.dotted")
                 } else {
-                    branchListView(branches: viewModel.branches.filter { !$0.isRemote }, title: "本地分支")
+                    HistoryView(repository: repository) // Default to showing history for the current branch
                 }
             case .remoteBranches:
-                if viewModel.branches.filter({ $0.isRemote }).isEmpty {
-                    emptyStateView(for: "远程分支", icon: "cloud")
-                } else {
-                    branchListView(branches: viewModel.branches.filter { $0.isRemote }, title: "远程分支")
-                }
+                 HistoryView(repository: repository) // Default to showing history for the current branch
             case .tags:
                 if viewModel.tags.isEmpty {
                     emptyStateView(for: "标签", icon: "tag")
@@ -106,11 +114,13 @@ struct RepositoryView: View {
                 placeholderView(for: "子模块", icon: "square.stack.3d.down.right", color: .purple)
             }
             
-        case .branchItem(let branchName, let isRemote):
-            if let branch = viewModel.branches.first(where: { $0.shortName == branchName && $0.isRemote == isRemote }) {
+        // ** FIX: Updated case to handle the new branchItem definition **
+        // ** 修复：更新 case 以处理新的 branchItem 定义 **
+        case .branchItem(let branchFullName):
+            if let branch = viewModel.branches.first(where: { $0.name == branchFullName }) {
                 branchDetailView(branch: branch)
             } else {
-                Text("分支不存在")
+                Text("分支不存在: \(branchFullName)")
                     .foregroundColor(.secondary)
             }
             
@@ -159,11 +169,6 @@ struct RepositoryView: View {
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
             }
-            Button("返回本地分支") {
-                viewModel.selectedFunctionItem = .expandableType(.localBranches)
-                viewModel.expandedSections.insert(.localBranches)
-            }
-            .buttonStyle(.borderedProminent)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(.regularMaterial)
@@ -184,32 +189,6 @@ struct RepositoryView: View {
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-    
-    private func branchListView(branches: [GitBranch], title: String) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Text(title)
-                    .font(.title2)
-                    .fontWeight(.semibold)
-                Spacer()
-                Text("\(branches.count) 个分支")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            LazyVStack(spacing: 8) {
-                ForEach(branches) { branch in
-                    BranchRowView(
-                        branch: branch,
-                        isSelected: viewModel.selectedFunctionItem == .branchItem(branch.shortName, isRemote: branch.isRemote),
-                        onSelect: {
-                            viewModel.selectedFunctionItem = .branchItem(branch.shortName, isRemote: branch.isRemote)
-                        }
-                    )
-                }
-            }
-            Spacer()
-        }
     }
     
     private func tagListView() -> some View {
@@ -306,69 +285,44 @@ struct RepositoryView: View {
     }
 }
 
-// 移除Git数据加载扩展
-// MARK: - 列表项组件
+// MARK: - Draggable Divider
 
-private struct BranchRowView: View {
-    let branch: GitBranch
-    let isSelected: Bool
-    let onSelect: () -> Void
-    @State private var isHovered = false
-    
+/// A view that acts as a draggable divider to resize the sidebar.
+/// 一个可拖动的分隔线视图，用于调整侧边栏大小。
+private struct DraggableDivider: View {
+    @Binding var width: Double
+    let minWidth: Double
+    let maxWidth: Double
+
+    @State private var dragOffset: CGFloat = 0
+
     var body: some View {
-        Button(action: onSelect) {
-            HStack(spacing: 12) {
-                Image(systemName: branch.isRemote ? "cloud" : "point.3.connected.trianglepath.dotted")
-                    .font(.system(size: 14))
-                    .foregroundStyle(branch.isRemote ? .blue : .green)
-                    .frame(width: 20)
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack {
-                        Text(branch.shortName)
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundStyle(.primary)
-                            .lineLimit(1)
-                        if branch.isCurrent {
-                            Text("当前")
-                                .font(.caption2)
-                                .padding(.horizontal, 4)
-                                .padding(.vertical, 1)
-                                .background(Color.green)
-                                .foregroundColor(.white)
-                                .clipShape(Capsule())
-                        }
-                        Spacer()
-                    }
-                    if let sha = branch.targetSha {
-                        Text(String(sha.prefix(8)))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
+        Divider()
+            .frame(width: 8)
+            .background(Color.black.opacity(0.001)) // Make a wider hit area
+            .contentShape(Rectangle())
+            .onHover { inside in
+                if inside {
+                    NSCursor.resizeLeftRight.push()
+                } else {
+                    NSCursor.pop()
                 }
-                Spacer()
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(
-                        isSelected ? Color.accentColor.opacity(0.2) :
-                        isHovered ? Color.primary.opacity(0.05) : Color.clear
-                    )
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        let newWidth = width + value.translation.width - dragOffset
+                        self.width = max(minWidth, min(newWidth, maxWidth))
+                        // We don't update dragOffset here to make dragging smoother
+                    }
+                    .onEnded { _ in
+                        dragOffset = 0 // Reset on end
+                    }
             )
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 1)
-            )
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.15)) {
-                isHovered = hovering
-            }
-        }
     }
 }
+
+// MARK: - List Item Components
 
 private struct TagRowView: View {
     let tag: GitTag
@@ -429,14 +383,3 @@ private struct TagRowView: View {
     }
 }
 
-#Preview {
-    // 更新Preview以使用ViewModel
-    RepositoryView(
-        viewModel: MainViewModel.shared, // 使用共享实例
-        repository: GitRepository(
-            name: "FastGit", 
-            path: "/Users/user/Documents/FastGit"
-        )
-    )
-    .frame(width: 1000, height: 700)
-}

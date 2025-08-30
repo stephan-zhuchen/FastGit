@@ -7,6 +7,8 @@
 
 import SwiftUI
 
+// --- Enums: FunctionListOption, ExpandableFunctionType, SelectedFunctionItem ---
+// --- 枚举：FunctionListOption, ExpandableFunctionType, SelectedFunctionItem ---
 /// 功能列表选项类型
 enum FunctionListOption: String, CaseIterable, Identifiable {
     case defaultHistory = "提交历史"
@@ -15,25 +17,18 @@ enum FunctionListOption: String, CaseIterable, Identifiable {
     
     var id: String { rawValue }
     
-    /// 图标名称
     var iconName: String {
         switch self {
-        case .defaultHistory:
-            return "doc.text.below.ecg"
-        case .localChanges:
-            return "doc.text.below.ecg"
-        case .stashList:
-            return "tray.full"
+        case .defaultHistory: return "doc.text.below.ecg"
+        case .localChanges: return "doc.text.below.ecg"
+        case .stashList: return "tray.full"
         }
     }
     
-    /// 是否已实现
     var isImplemented: Bool {
         switch self {
-        case .defaultHistory:
-            return true
-        default:
-            return false
+        case .defaultHistory: return true
+        default: return false
         }
     }
 }
@@ -47,154 +42,157 @@ enum ExpandableFunctionType: String, CaseIterable, Identifiable {
     
     var id: String { rawValue }
     
-    /// 图标名称
     var iconName: String {
         switch self {
-        case .localBranches:
-            return "point.3.connected.trianglepath.dotted"
-        case .remoteBranches:
-            return "point.3.connected.trianglepath.dotted"
-        case .tags:
-            return "tag"
-        case .submodules:
-            return "square.stack.3d.down.right"
+        case .localBranches: return "point.3.connected.trianglepath.dotted"
+        case .remoteBranches: return "cloud"
+        case .tags: return "tag"
+        case .submodules: return "square.stack.3d.down.right"
         }
     }
     
-    /// 主题颜色
     var themeColor: Color {
         switch self {
-        case .localBranches:
-            return .blue
-        case .remoteBranches:
-            return .green
-        case .tags:
-            return .orange
-        case .submodules:
-            return .purple
-        }
-    }
-    
-    /// 是否已实现
-    var isImplemented: Bool {
-        switch self {
-        case .localBranches, .remoteBranches, .tags:
-            return true  // 已有Git数据支持
-        case .submodules:
-            return false  // 暂未实现
+        case .localBranches: return .blue
+        case .remoteBranches: return .green
+        case .tags: return .orange
+        case .submodules: return .purple
         }
     }
 }
 
 /// 选中的功能项类型
-enum SelectedFunctionItem: Equatable {
+enum SelectedFunctionItem: Equatable, Hashable {
     case fixedOption(FunctionListOption)
     case expandableType(ExpandableFunctionType)
-    case branchItem(String, isRemote: Bool)  // 分支名, 是否为远程分支
-    case tagItem(String)  // 标签名
-    case submoduleItem(String)  // 子模块名
+    // Now using full branch name for unique identification
+    // 现在使用完整分支名作为唯一标识
+    case branchItem(String) // Branch full name, e.g., "origin/feature/new-ui"
+    case tagItem(String)
+    case submoduleItem(String)
 }
 
-/// 功能列表视图 - 实现两层结构的左侧功能导航
+
+/// 功能列表视图
 struct FunctionListView: View {
     @Binding var selectedItem: SelectedFunctionItem?
     @Binding var expandedSections: Set<ExpandableFunctionType>
     
-    // Git数据
+    // Git data
     let repository: GitRepository?
     let branches: [GitBranch]
     let tags: [GitTag]
-    let submodules: [String]  // 暂时用字符串数组表示子模块
+    let submodules: [String]
     
+    // State for the branch trees
+    @State private var localBranchTree: [BranchTreeNode] = []
+    @State private var remoteBranchTree: [BranchTreeNode] = []
+
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
-                // 上部分：固定功能选项
                 fixedFunctionsSection
-                
-                Divider()
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                
-                // 下部分：可展开功能列表
+                Divider().padding(.horizontal, 12).padding(.vertical, 8)
                 expandableFunctionsSection
-                
                 Spacer(minLength: 20)
             }
             .padding(.vertical, 12)
         }
-        .frame(width: 250)  // 稍微增加宽度以适应更多内容
+        // ** MODIFICATION: Removed fixed width **
+        // ** 修改：移除了固定的宽度 **
         .background(.regularMaterial)
+        .onAppear(perform: buildTrees)
+        .onChange(of: branches) { _, _ in buildTrees() }
     }
     
-    // MARK: - 子视图
-    
-    /// 固定功能选项区域
+    // MARK: - Data Processing
+    private func buildTrees() {
+        localBranchTree = BranchTreeNode.buildTree(from: branches.filter { !$0.isRemote })
+        remoteBranchTree = BranchTreeNode.buildTree(from: branches.filter { $0.isRemote })
+    }
+
+    // MARK: - Subviews
     private var fixedFunctionsSection: some View {
         VStack(spacing: 4) {
-            // 标题
             HStack {
-                Text("工作区")
-                    .font(.headline)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(.primary)
+                Text("工作区").font(.headline).fontWeight(.semibold).foregroundStyle(.primary)
                 Spacer()
             }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 8)
+            .padding(.horizontal, 16).padding(.bottom, 8)
             
-            // 固定功能选项
             ForEach(FunctionListOption.allCases) { option in
                 FixedFunctionButton(
                     option: option,
                     isSelected: selectedItem == .fixedOption(option),
-                    action: {
-                        selectedItem = .fixedOption(option)
-                    }
+                    action: { selectedItem = .fixedOption(option) }
                 )
             }
         }
     }
     
-    /// 可展开功能列表区域
     private var expandableFunctionsSection: some View {
         VStack(spacing: 8) {
-            // 标题
             HStack {
-                Text("仓库")
-                    .font(.headline)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(.primary)
+                Text("仓库").font(.headline).fontWeight(.semibold).foregroundStyle(.primary)
                 Spacer()
             }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 4)
+            .padding(.horizontal, 16).padding(.bottom, 4)
+
+            // Local Branches Section
+            ExpandableFunctionSection(
+                type: .localBranches,
+                isExpanded: expandedSections.contains(.localBranches),
+                itemCount: branches.filter { !$0.isRemote }.count,
+                onToggleExpansion: { toggleSection(.localBranches) }
+            ) {
+                ForEach(localBranchTree) { node in
+                    BranchNodeView(node: node, level: 0, selectedItem: $selectedItem)
+                }
+            }
+
+            // Remote Branches Section
+            ExpandableFunctionSection(
+                type: .remoteBranches,
+                isExpanded: expandedSections.contains(.remoteBranches),
+                itemCount: branches.filter { $0.isRemote }.count,
+                onToggleExpansion: { toggleSection(.remoteBranches) }
+            ) {
+                ForEach(remoteBranchTree) { node in
+                    BranchNodeView(node: node, level: 0, selectedItem: $selectedItem)
+                }
+            }
             
-            // 可展开功能列表
-            ForEach(ExpandableFunctionType.allCases) { type in
-                ExpandableFunctionSection(
-                    type: type,
-                    isExpanded: expandedSections.contains(type),
-                    isSelected: selectedItem == .expandableType(type),
-                    items: getItemsForType(type),
-                    selectedItem: selectedItem,
-                    onToggleExpansion: {
-                        toggleSection(type)
-                    },
-                    onSelectType: {
-                        selectedItem = .expandableType(type)
-                    },
-                    onSelectItem: { item in
-                        selectedItem = item
-                    }
-                )
+            // ** FIX: Added Tags section back **
+            // ** 修复：将标签列表部分加回来 **
+            ExpandableFunctionSection(
+                type: .tags,
+                isExpanded: expandedSections.contains(.tags),
+                itemCount: tags.count,
+                onToggleExpansion: { toggleSection(.tags) }
+            ) {
+                ForEach(tags) { tag in
+                    TagItemButton(
+                        tag: tag,
+                        isSelected: selectedItem == .tagItem(tag.name),
+                        onSelect: { selectedItem = .tagItem(tag.name) }
+                    )
+                }
+            }
+            
+            // ** FIX: Added Submodules section back (as placeholder) **
+            // ** 修复：将子模块部分加回来（作为占位符） **
+            ExpandableFunctionSection(
+                type: .submodules,
+                isExpanded: expandedSections.contains(.submodules),
+                itemCount: submodules.count,
+                onToggleExpansion: { toggleSection(.submodules) }
+            ) {
+                // Placeholder for submodule items
+                // 子模块项的占位符
             }
         }
     }
     
-    // MARK: - 私有方法
-    
-    /// 切换展开/收缩状态
     private func toggleSection(_ type: ExpandableFunctionType) {
         if expandedSections.contains(type) {
             expandedSections.remove(type)
@@ -202,23 +200,140 @@ struct FunctionListView: View {
             expandedSections.insert(type)
         }
     }
+}
+
+// MARK: - Reusable Components
+
+private struct ExpandableFunctionSection<Content: View>: View {
+    let type: ExpandableFunctionType
+    let isExpanded: Bool
+    let itemCount: Int
+    let onToggleExpansion: () -> Void
+    @ViewBuilder let content: () -> Content
     
-    /// 获取指定类型的数据项
-    private func getItemsForType(_ type: ExpandableFunctionType) -> [SelectedFunctionItem] {
-        switch type {
-        case .localBranches:
-            return branches.filter { !$0.isRemote }.map { .branchItem($0.shortName, isRemote: false) }
-        case .remoteBranches:
-            return branches.filter { $0.isRemote }.map { .branchItem($0.shortName, isRemote: true) }
-        case .tags:
-            return tags.map { .tagItem($0.name) }
-        case .submodules:
-            return submodules.map { .submoduleItem($0) }
+    @State private var isHovered = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Button(action: onToggleExpansion) {
+                HStack(spacing: 12) {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                    
+                    Image(systemName: type.iconName).font(.system(size: 16, weight: .medium)).foregroundStyle(type.themeColor).frame(width: 20)
+                    Text(type.rawValue).font(.system(size: 14, weight: .medium)).foregroundStyle(.primary)
+                    Spacer()
+                    if itemCount > 0 {
+                        Text("\(itemCount)").font(.caption).foregroundStyle(.secondary).padding(.horizontal, 6).padding(.vertical, 2).background(Color.secondary.opacity(0.2)).clipShape(Capsule())
+                    }
+                }
+                .padding(.horizontal, 16).padding(.vertical, 8)
+                .background(isHovered ? Color.primary.opacity(0.05) : Color.clear)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 8)
+            .onHover { hovering in withAnimation(.easeInOut(duration: 0.2)) { isHovered = hovering } }
+
+            if isExpanded {
+                content().padding(.top, 2).padding(.bottom, 4)
+            }
         }
+        .animation(.easeInOut(duration: 0.2), value: isExpanded)
     }
 }
 
-/// 固定功能按钮组件
+/// A view that recursively renders a branch tree node.
+/// 一个递归渲染分支树节点的视图。
+struct BranchNodeView: View {
+    @ObservedObject var node: BranchTreeNode
+    let level: Int
+    @Binding var selectedItem: SelectedFunctionItem?
+    @State private var isHovered = false
+
+    private var indent: CGFloat { CGFloat(level * 16 + 20) }
+
+    @ViewBuilder
+    private var buttonContent: some View {
+        HStack(spacing: 6) {
+            // Folder chevron
+            if node.branch == nil {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(.secondary)
+                    .rotationEffect(.degrees(node.isExpanded ? 90 : 0))
+            } else {
+                // Spacer to align branch names
+                Spacer().frame(width: 8)
+            }
+            
+            // Icon
+            Image(systemName: node.branch == nil ? "folder" : (node.branch!.isRemote ? "cloud" : "point.3.connected.trianglepath.dotted"))
+                .font(.system(size: 12))
+                .foregroundStyle(iconColor)
+                .frame(width: 16, alignment: .center)
+            
+            // Name
+            Text(node.name)
+                .font(.system(size: 13))
+                .fontWeight(node.branch?.isCurrent ?? false ? .bold : .regular)
+                .foregroundStyle(isSelected ? .white : .primary)
+                .lineLimit(1)
+            
+            Spacer()
+        }
+        .padding(.leading, indent)
+        .padding(.vertical, 4)
+        .padding(.trailing, 8)
+    }
+    
+    private var iconColor: Color {
+        if node.branch == nil { return .secondary.opacity(0.8) }
+        if node.branch!.isCurrent { return .accentColor }
+        return .secondary
+    }
+    
+    private var backgroundStyle: some View {
+        RoundedRectangle(cornerRadius: 6)
+            .fill(
+                isSelected ? Color.accentColor :
+                isHovered ? Color.primary.opacity(0.05) : Color.clear
+            )
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Button(action: {
+                if let branch = node.branch {
+                    selectedItem = .branchItem(branch.name) // Select the branch
+                } else {
+                    node.toggleExpanded() // Expand/collapse the folder
+                }
+            }) {
+                buttonContent
+            }
+            .buttonStyle(.plain)
+            .background(backgroundStyle)
+            .padding(.horizontal, 8)
+            .onHover { hovering in isHovered = hovering }
+            
+            if node.isExpanded {
+                ForEach(node.children) { childNode in
+                    BranchNodeView(node: childNode, level: level + 1, selectedItem: $selectedItem)
+                }
+            }
+        }
+    }
+    
+    private var isSelected: Bool {
+        guard let branch = node.branch else { return false }
+        return selectedItem == .branchItem(branch.name)
+    }
+}
+
+
 private struct FixedFunctionButton: View {
     let option: FunctionListOption
     let isSelected: Bool
@@ -229,32 +344,17 @@ private struct FixedFunctionButton: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 12) {
-                Image(systemName: option.iconName)
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(isSelected ? .white : .primary)
-                    .frame(width: 20)
-                
-                Text(option.rawValue)
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(isSelected ? .white : .primary)
-                
+                Image(systemName: option.iconName).font(.system(size: 16, weight: .medium)).foregroundStyle(isSelected ? .white : .primary).frame(width: 20)
+                Text(option.rawValue).font(.system(size: 14, weight: .medium)).foregroundStyle(isSelected ? .white : .primary)
                 Spacer()
-                
-                // 未实现功能的标识
                 if !option.isImplemented {
-                    Image(systemName: "clock.badge")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
+                    Image(systemName: "clock.badge").font(.system(size: 12)).foregroundStyle(.secondary)
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 16).padding(.vertical, 8)
             .background(
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(
-                        isSelected ? Color.accentColor :
-                        isHovered ? Color.primary.opacity(0.08) : Color.clear
-                    )
+                    .fill(isSelected ? Color.accentColor : isHovered ? Color.primary.opacity(0.08) : Color.clear)
             )
         }
         .buttonStyle(.plain)
@@ -262,202 +362,102 @@ private struct FixedFunctionButton: View {
         .opacity(option.isImplemented ? 1.0 : 0.6)
         .padding(.horizontal, 8)
         .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.2)) {
-                isHovered = hovering && option.isImplemented
-            }
+            withAnimation(.easeInOut(duration: 0.2)) { isHovered = hovering && option.isImplemented }
         }
     }
 }
 
-/// 可展开功能区域组件
-private struct ExpandableFunctionSection: View {
-    let type: ExpandableFunctionType
-    let isExpanded: Bool
+// ** ADDED: A simple button for tag items **
+// ** 新增：用于标签项的简单按钮 **
+private struct TagItemButton: View {
+    let tag: GitTag
     let isSelected: Bool
-    let items: [SelectedFunctionItem]
-    let selectedItem: SelectedFunctionItem?
-    let onToggleExpansion: () -> Void
-    let onSelectType: () -> Void
-    let onSelectItem: (SelectedFunctionItem) -> Void
+    let onSelect: () -> Void
     
     @State private var isHovered = false
     
     var body: some View {
-        VStack(spacing: 0) {
-            // 标题行（可点击展开/收缩）
-            Button(action: onToggleExpansion) {
-                HStack(spacing: 12) {
-                    // 展开/收缩箭头
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.secondary)
-                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                        .animation(.easeInOut(duration: 0.2), value: isExpanded)
-                    
-                    // 图标
-                    Image(systemName: type.iconName)
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundStyle(type.themeColor)
-                        .frame(width: 20)
-                    
-                    // 标题
-                    Text(type.rawValue)
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(.primary)
-                    
-                    Spacer()
-                    
-                    // 数量标识
-                    if !items.isEmpty {
-                        Text("\(items.count)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Color.secondary.opacity(0.2))
-                            .clipShape(Capsule())
-                    }
-                    
-                    // 未实现功能的标识
-                    if !type.isImplemented {
-                        Image(systemName: "clock.badge")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-                .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(isHovered ? Color.primary.opacity(0.05) : Color.clear)
-                )
-            }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 8)
-            .onHover { hovering in
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    isHovered = hovering
-                }
-            }
-            
-            // 展开的内容
-            if isExpanded && type.isImplemented {
-                VStack(spacing: 2) {
-                    ForEach(items.indices, id: \.self) { index in
-                        let item = items[index]
-                        ExpandableItemButton(
-                            item: item,
-                            type: type,
-                            isSelected: selectedItem == item,
-                            action: {
-                                onSelectItem(item)
-                            }
-                        )
-                    }
-                }
-                .padding(.leading, 32)  // 缩进子项
-                .padding(.bottom, 4)
-            }
-        }
-    }
-}
-
-/// 可展开项按钮组件
-private struct ExpandableItemButton: View {
-    let item: SelectedFunctionItem
-    let type: ExpandableFunctionType
-    let isSelected: Bool
-    let action: () -> Void
-    
-    @State private var isHovered = false
-    
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 8) {
-                // 项目图标
-                itemIcon
+        Button(action: onSelect) {
+            HStack(spacing: 6) {
+                Spacer().frame(width: 8) // Indent spacer
+                Image(systemName: "tag")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.orange)
+                    .frame(width: 16, alignment: .center)
                 
-                // 项目名称
-                Text(itemDisplayName)
+                Text(tag.name)
                     .font(.system(size: 13))
                     .foregroundStyle(isSelected ? .white : .primary)
                     .lineLimit(1)
                 
                 Spacer()
             }
-            .padding(.horizontal, 12)
+            .padding(.leading, 20) // Static indent for tags
             .padding(.vertical, 4)
-            .background(
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(
-                        isSelected ? type.themeColor :
-                        isHovered ? Color.primary.opacity(0.05) : Color.clear
-                    )
-            )
+            .padding(.trailing, 8)
         }
         .buttonStyle(.plain)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(
+                    isSelected ? Color.orange.opacity(0.8) :
+                    isHovered ? Color.primary.opacity(0.05) : Color.clear
+                )
+        )
         .padding(.horizontal, 8)
         .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.15)) {
-                isHovered = hovering
-            }
-        }
-    }
-    
-    /// 项目图标
-    private var itemIcon: some View {
-        Group {
-            switch item {
-            case .branchItem(_, let isRemote):
-                Image(systemName: isRemote ? "cloud" : "point.3.connected.trianglepath.dotted")
-                    .font(.system(size: 12))
-                    .foregroundStyle(isSelected ? .white : type.themeColor)
-            case .tagItem:
-                Image(systemName: "tag.fill")
-                    .font(.system(size: 12))
-                    .foregroundStyle(isSelected ? .white : type.themeColor)
-            case .submoduleItem:
-                Image(systemName: "cube")
-                    .font(.system(size: 12))
-                    .foregroundStyle(isSelected ? .white : type.themeColor)
-            default:
-                EmptyView()
-            }
-        }
-        .frame(width: 16)
-    }
-    
-    /// 项目显示名称
-    private var itemDisplayName: String {
-        switch item {
-        case .branchItem(let name, _):
-            return name
-        case .tagItem(let name):
-            return name
-        case .submoduleItem(let name):
-            return name
-        default:
-            return ""
+            isHovered = hovering
         }
     }
 }
 
+
+// ** ADDED: Preview Provider for Xcode Previews **
+// ** 新增：用于 Xcode 预览的 Preview Provider **
 #Preview {
-    FunctionListView(
-        selectedItem: .constant(.expandableType(.localBranches)),
-        expandedSections: .constant([.localBranches, .tags]),
-        repository: GitRepository(name: "FastGit", path: "/Users/user/FastGit"),
-        branches: [
-            GitBranch(name: "main", isCurrent: true),
-            GitBranch(name: "develop"),
-            GitBranch(name: "origin/main", isRemote: true),
-            GitBranch(name: "origin/develop", isRemote: true)
-        ],
-        tags: [
-            GitTag(name: "v1.0.0", targetSha: "abc123"),
-            GitTag(name: "v1.1.0", targetSha: "def456")
-        ],
-        submodules: ["SwiftGitX", "TestFramework"]
-    )
-    .frame(height: 600)
+    // A stateful container to host the FunctionListView for previewing
+    // 一个有状态的容器，用于承载 FunctionListView 以便预览
+    struct FunctionListViewPreview: View {
+        @State private var selectedItem: SelectedFunctionItem? = .branchItem("main")
+        @State private var expandedSections: Set<ExpandableFunctionType> = [.localBranches, .remoteBranches, .tags]
+
+        // Mock data that mimics a real repository
+        // 模拟真实仓库的 Mock 数据
+        private let mockBranches: [GitBranch] = [
+            // Local Branches
+            GitBranch(name: "main", isCurrent: true, isRemote: false, targetSha: "abc111"),
+            GitBranch(name: "develop", isCurrent: false, isRemote: false, targetSha: "abc222"),
+            
+            // Remote Branches with hierarchy
+            GitBranch(name: "origin/main", isCurrent: false, isRemote: true, targetSha: "abc333"),
+            GitBranch(name: "origin/develop", isCurrent: false, isRemote: true, targetSha: "abc444"),
+            GitBranch(name: "origin/feature/new-login", isCurrent: false, isRemote: true, targetSha: "abc555"),
+            GitBranch(name: "origin/feature/user-profile", isCurrent: false, isRemote: true, targetSha: "abc666"),
+            GitBranch(name: "origin/fix/login-button", isCurrent: false, isRemote: true, targetSha: "abc777"),
+            GitBranch(name: "origin/dependabot/npm/react-18", isCurrent: false, isRemote: true, targetSha: "abc888")
+        ]
+        
+        private let mockTags: [GitTag] = [
+            GitTag(name: "v1.0.0", targetSha: "def111"),
+            GitTag(name: "v1.0.1", targetSha: "def222"),
+            GitTag(name: "v2.0.0-beta", targetSha: "def333")
+        ]
+        
+        private let mockRepo = GitRepository(name: "PreviewRepo", path: "/dev/null")
+        
+        var body: some View {
+            FunctionListView(
+                selectedItem: $selectedItem,
+                expandedSections: $expandedSections,
+                repository: mockRepo,
+                branches: mockBranches,
+                tags: mockTags,
+                submodules: ["Submodule1"]
+            )
+            .frame(height: 700) // Give it a fixed height for preview
+        }
+    }
+    
+    return FunctionListViewPreview()
 }
+

@@ -241,12 +241,28 @@ class GitService: ObservableObject {
     /// - Returns: 分支数组
     private func fetchBranches(from repo: Repository) async throws -> [GitBranch] {
         var branches: [GitBranch] = []
-        
+
+        // --- 开始诊断 ---
+        print("🔍 [诊断] 开始执行 fetchBranches...")
+        do {
+            let remotes = try repo.remote.list()
+            if remotes.isEmpty {
+                print("⚠️ [诊断] 在仓库配置中未找到任何远程仓库。这很可能是问题的根源。")
+            } else {
+                let remoteNames = remotes.compactMap { $0.name }
+                print("✅ [诊断] 找到 \(remotes.count) 个远程仓库: \(remoteNames)")
+            }
+        } catch {
+            print("❌ [诊断] 列出远程仓库失败: \(error)")
+        }
+        // --- 结束诊断 ---
+
         // 获取当前分支
         let currentBranchName: String?
         do {
             let currentBranch = try repo.branch.current
             currentBranchName = currentBranch.name
+            print("🌿 当前分支是: \(currentBranchName ?? "无")")
         } catch {
             print("⚠️ 获取当前分支失败: \(error)")
             currentBranchName = nil
@@ -255,6 +271,7 @@ class GitService: ObservableObject {
         // 获取所有本地分支
         do {
             let localBranches = try repo.branch.list(.local)
+            print("🌿 找到 \(localBranches.count) 个本地分支。")
             for branch in localBranches {
                 let isCurrent = branch.name == currentBranchName
                 let fastGitBranch = GitBranch(
@@ -269,23 +286,31 @@ class GitService: ObservableObject {
             print("⚠️ 获取本地分支失败: \(error)")
         }
         
-        // 获取所有远程分支
         do {
-            let remoteBranches = try repo.branch.list(.remote)
-            for branch in remoteBranches {
-                let fastGitBranch = GitBranch(
-                    name: branch.name,
-                    isCurrent: false,
-                    isRemote: true,
-                    targetSha: branch.target.id.hex
-                )
-                branches.append(fastGitBranch)
+            // 1. 先获取所有 Remote 对象。
+            let remotes = try repo.remote.list()
+            var remoteBranchCount = 0
+
+            // 2. 遍历每一个 Remote 对象
+            for remote in remotes {
+                // 3. 访问其 'branches' 属性来获取该远程下的所有分支
+                for remoteBranch in remote.branches {
+                    let fastGitBranch = GitBranch(
+                        name: remoteBranch.name, // 'name' 已经是 shorthand, e.g., "origin/develop"
+                        isCurrent: false,
+                        isRemote: true,
+                        targetSha: remoteBranch.target.id.hex
+                    )
+                    branches.append(fastGitBranch)
+                    remoteBranchCount += 1
+                }
             }
+            print("✅ 通过遍历 Remote 对象，成功找到 \(remoteBranchCount) 个远程分支。")
         } catch {
-            print("⚠️ 获取远程分支失败: \(error)")
+            print("❌ 获取远程分支列表失败: \(error)")
         }
         
-        print("🌿 获取到 \(branches.count) 个分支")
+        print("🌿 总共获取到 \(branches.count) 个分支。")
         return branches
     }
     
