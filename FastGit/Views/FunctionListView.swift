@@ -65,9 +65,7 @@ enum ExpandableFunctionType: String, CaseIterable, Identifiable {
 enum SelectedFunctionItem: Equatable, Hashable {
     case fixedOption(FunctionListOption)
     case expandableType(ExpandableFunctionType)
-    // Now using full branch name for unique identification
-    // 现在使用完整分支名作为唯一标识
-    case branchItem(String) // Branch full name, e.g., "origin/feature/new-ui"
+    case branchItem(String)
     case tagItem(String)
     case submoduleItem(String)
 }
@@ -78,23 +76,20 @@ struct FunctionListView: View {
     @Binding var selectedItem: SelectedFunctionItem?
     @Binding var expandedSections: Set<ExpandableFunctionType>
     
-    // Git data
     let repository: GitRepository?
     let branches: [GitBranch]
     let tags: [GitTag]
     let submodules: [String]
-    
-    // Callback for submodule double-click
-    // 子模块双击的回调
     let onOpenSubmodule: ((String) -> Void)?
     
-    // State for the branch trees
     @State private var localBranchTree: [BranchTreeNode] = []
     @State private var remoteBranchTree: [BranchTreeNode] = []
+    
+    @State private var searchText = ""
+    @State private var isCaseSensitive = false
+    @State private var isWholeWord = false
 
     var body: some View {
-        // ** FIX: Use VStack instead of ScrollView to control scrolling behavior **
-        // ** 修复：使用 VStack 替代 ScrollView 来控制滚动行为 **
         VStack(spacing: 0) {
             fixedFunctionsSection
             Divider().padding(.horizontal, 12).padding(.vertical, 8)
@@ -106,12 +101,49 @@ struct FunctionListView: View {
         .onChange(of: branches) { _, _ in buildTrees() }
     }
     
-    // MARK: - Data Processing
+    // MARK: - Data Processing & Filtering
+    
     private func buildTrees() {
         localBranchTree = BranchTreeNode.buildTree(from: branches.filter { !$0.isRemote })
         remoteBranchTree = BranchTreeNode.buildTree(from: branches.filter { $0.isRemote })
     }
+    
+    private func checkMatch(in text: String, for pattern: String) -> Bool {
+        if isWholeWord {
+            let patternToSearch = isCaseSensitive ? pattern : pattern.lowercased()
+            let textToSearchIn = isCaseSensitive ? text : text.lowercased()
+            if let regex = try? NSRegularExpression(pattern: "\\b\(NSRegularExpression.escapedPattern(for: patternToSearch))\\b") {
+                let range = NSRange(textToSearchIn.startIndex..., in: textToSearchIn)
+                return regex.firstMatch(in: textToSearchIn, options: [], range: range) != nil
+            }
+            return false
+        } else {
+            if isCaseSensitive {
+                return text.contains(pattern)
+            } else {
+                return text.localizedCaseInsensitiveContains(pattern)
+            }
+        }
+    }
 
+    private var filteredLocalBranchTree: [BranchTreeNode] {
+        BranchTreeNode.filterTree(localBranchTree, with: searchText, checkMatch: checkMatch)
+    }
+    
+    private var filteredRemoteBranchTree: [BranchTreeNode] {
+        BranchTreeNode.filterTree(remoteBranchTree, with: searchText, checkMatch: checkMatch)
+    }
+    
+    private var filteredTags: [GitTag] {
+        if searchText.isEmpty { return tags }
+        return tags.filter { checkMatch(in: $0.name, for: searchText) }
+    }
+    
+    private var filteredSubmodules: [String] {
+        if searchText.isEmpty { return submodules }
+        return submodules.filter { checkMatch(in: $0, for: searchText) }
+    }
+    
     // MARK: - Subviews
     private var fixedFunctionsSection: some View {
         VStack(spacing: 4) {
@@ -131,103 +163,68 @@ struct FunctionListView: View {
         }
     }
     
-    // ** FIX: Wrap expandable content in a ScrollView **
-    // ** 修复：将可展开内容包裹在 ScrollView 中 **
     private var expandableFunctionsSection: some View {
         ScrollView {
             VStack(spacing: 8) {
                 HStack {
                     Text("仓库").font(.headline).fontWeight(.semibold).foregroundStyle(.primary)
                     Spacer()
+                    CustomSearchBar(
+                        searchText: $searchText,
+                        isCaseSensitive: $isCaseSensitive,
+                        isWholeWord: $isWholeWord
+                    )
+                    .frame(maxWidth: 130)
                 }
                 .padding(.horizontal, 16).padding(.bottom, 4)
 
-                // Local Branches Section
-                ExpandableFunctionSection(
-                    type: .localBranches,
-                    isExpanded: expandedSections.contains(.localBranches),
-                    itemCount: branches.filter { !$0.isRemote }.count,
-                    onToggleExpansion: { toggleSection(.localBranches) }
-                ) {
-                    // This content is usually short, no ScrollView needed
-                    // 这部分内容通常很短，不需要 ScrollView
-                    VStack(spacing: 2) {
-                        ForEach(localBranchTree) { node in
-                            BranchNodeView(node: node, level: 0, selectedItem: $selectedItem)
-                        }
-                    }
-                }
-
-                // Remote Branches Section
-                ExpandableFunctionSection(
-                    type: .remoteBranches,
-                    isExpanded: expandedSections.contains(.remoteBranches),
-                    itemCount: branches.filter { $0.isRemote }.count,
-                    onToggleExpansion: { toggleSection(.remoteBranches) }
-                ) {
-                    // ** FIX: Limit height and make this section scrollable **
-                    // ** 修复：限制高度并使此部分可滚动 **
-                    ScrollView {
-                        VStack(spacing: 2) {
-                            ForEach(remoteBranchTree) { node in
-                                BranchNodeView(node: node, level: 0, selectedItem: $selectedItem)
-                            }
-                        }
-                    }
-                    .frame(maxHeight: 200) // Adjust max height as needed (可根据需要调整最大高度)
-                }
+                localBranchesSection
+                remoteBranchesSection
+                tagsSection
+                submodulesSection
                 
-                // Tags Section
-                ExpandableFunctionSection(
-                    type: .tags,
-                    isExpanded: expandedSections.contains(.tags),
-                    itemCount: tags.count,
-                    onToggleExpansion: { toggleSection(.tags) }
-                ) {
-                    // ** FIX: Limit height and make this section scrollable **
-                    // ** 修复：限制高度并使此部分可滚动 **
-                    ScrollView {
-                        VStack(spacing: 2) {
-                            ForEach(tags) { tag in
-                                TagItemButton(
-                                    tag: tag,
-                                    isSelected: selectedItem == .tagItem(tag.name),
-                                    onSelect: { selectedItem = .tagItem(tag.name) }
-                                )
-                            }
-                        }
-                    }
-                    .frame(maxHeight: 200) // Adjust max height as needed (可根据需要调整最大高度)
-                }
-                
-                // Submodules Section
-                ExpandableFunctionSection(
-                    type: .submodules,
-                    isExpanded: expandedSections.contains(.submodules),
-                    itemCount: submodules.count,
-                    onToggleExpansion: { toggleSection(.submodules) }
-                ) {
-                    // ** ADDED: Submodule list implementation **
-                    // ** 新增：子模块列表实现 **
-                    ScrollView {
-                        VStack(spacing: 2) {
-                            ForEach(submodules, id: \.self) { submoduleName in
-                                SubmoduleItemButton(
-                                    submoduleName: submoduleName,
-                                    onDoubleTap: {
-                                        onOpenSubmodule?(submoduleName)
-                                    }
-                                )
-                            }
-                        }
-                    }
-                    .frame(maxHeight: 200)
-                }
-                
-                // This Spacer pushes everything up
-                // 这个 Spacer 将所有内容向上推
                 Spacer()
             }
+        }
+    }
+    
+    @ViewBuilder
+    private var localBranchesSection: some View {
+        ExpandableFunctionSection(
+            type: .localBranches, isExpanded: isSectionExpanded(.localBranches), itemCount: filteredLocalBranchTree.count,
+            onToggleExpansion: { toggleSection(.localBranches) }
+        ) {
+            LocalBranchContentView(nodes: filteredLocalBranchTree, selectedItem: $selectedItem)
+        }
+    }
+    
+    @ViewBuilder
+    private var remoteBranchesSection: some View {
+        ExpandableFunctionSection(
+            type: .remoteBranches, isExpanded: isSectionExpanded(.remoteBranches), itemCount: filteredRemoteBranchTree.count,
+            onToggleExpansion: { toggleSection(.remoteBranches) }
+        ) {
+            RemoteBranchContentView(nodes: filteredRemoteBranchTree, selectedItem: $selectedItem)
+        }
+    }
+
+    @ViewBuilder
+    private var tagsSection: some View {
+        ExpandableFunctionSection(
+            type: .tags, isExpanded: isSectionExpanded(.tags), itemCount: filteredTags.count,
+            onToggleExpansion: { toggleSection(.tags) }
+        ) {
+            TagsContentView(tags: filteredTags, selectedItem: $selectedItem)
+        }
+    }
+    
+    @ViewBuilder
+    private var submodulesSection: some View {
+        ExpandableFunctionSection(
+            type: .submodules, isExpanded: isSectionExpanded(.submodules), itemCount: filteredSubmodules.count,
+            onToggleExpansion: { toggleSection(.submodules) }
+        ) {
+            SubmodulesContentView(submodules: filteredSubmodules, onOpenSubmodule: onOpenSubmodule)
         }
     }
     
@@ -238,13 +235,13 @@ struct FunctionListView: View {
             expandedSections.insert(type)
         }
     }
+
+    private func isSectionExpanded(_ type: ExpandableFunctionType) -> Bool {
+        !searchText.isEmpty || expandedSections.contains(type)
+    }
 }
 
-// MARK: - Reusable Components
-
-// ... (ExpandableFunctionSection, BranchNodeView, etc. remain the same)
-// ... (ExpandableFunctionSection, BranchNodeView 等组件保持不变)
-
+// MARK: - Reusable Components & Section Content Views
 
 private struct ExpandableFunctionSection<Content: View>: View {
     let type: ExpandableFunctionType
@@ -259,23 +256,11 @@ private struct ExpandableFunctionSection<Content: View>: View {
         VStack(spacing: 0) {
             Button(action: onToggleExpansion) {
                 HStack(spacing: 12) {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.secondary)
-                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                    
+                    Image(systemName: "chevron.right").font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary).rotationEffect(.degrees(isExpanded ? 90 : 0))
                     Image(systemName: type.iconName).font(.system(size: 16, weight: .medium)).foregroundStyle(type.themeColor).frame(width: 20)
                     Text(type.rawValue).font(.system(size: 14, weight: .medium)).foregroundStyle(.primary)
                     Spacer()
-                    // ** FIX: Always show the count, even if it's 0 **
-                    // ** 修复：总是显示数量，即使是 0 **
-                    Text("\(itemCount)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color.secondary.opacity(0.2))
-                        .clipShape(Capsule())
+                    Text("\(itemCount)").font(.caption).foregroundStyle(.secondary).padding(.horizontal, 6).padding(.vertical, 2).background(Color.secondary.opacity(0.2)).clipShape(Capsule())
                 }
                 .padding(.horizontal, 16).padding(.vertical, 8)
                 .background(isHovered ? Color.primary.opacity(0.05) : Color.clear)
@@ -293,8 +278,77 @@ private struct ExpandableFunctionSection<Content: View>: View {
     }
 }
 
-/// A view that recursively renders a branch tree node.
-/// 一个递归渲染分支树节点的视图。
+// MARK: - Section Content Views
+private struct LocalBranchContentView: View {
+    let nodes: [BranchTreeNode]
+    @Binding var selectedItem: SelectedFunctionItem?
+
+    var body: some View {
+        VStack(spacing: 2) {
+            ForEach(nodes) { node in
+                BranchNodeView(node: node, level: 0, selectedItem: $selectedItem)
+            }
+        }
+    }
+}
+
+private struct RemoteBranchContentView: View {
+    let nodes: [BranchTreeNode]
+    @Binding var selectedItem: SelectedFunctionItem?
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 2) {
+                ForEach(nodes) { node in
+                    BranchNodeView(node: node, level: 0, selectedItem: $selectedItem)
+                }
+            }
+        }
+        .frame(maxHeight: 200)
+    }
+}
+
+private struct TagsContentView: View {
+    let tags: [GitTag]
+    @Binding var selectedItem: SelectedFunctionItem?
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 2) {
+                ForEach(tags) { tag in
+                    TagItemButton(
+                        tag: tag, isSelected: selectedItem == .tagItem(tag.name),
+                        onSelect: { selectedItem = .tagItem(tag.name) }
+                    )
+                }
+            }
+        }
+        .frame(maxHeight: 200)
+    }
+}
+
+private struct SubmodulesContentView: View {
+    let submodules: [String]
+    let onOpenSubmodule: ((String) -> Void)?
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 2) {
+                ForEach(submodules, id: \.self) { submoduleName in
+                    SubmoduleItemButton(
+                        submoduleName: submoduleName,
+                        onDoubleTap: { onOpenSubmodule?(submoduleName) }
+                    )
+                }
+            }
+        }
+        .frame(maxHeight: 200)
+    }
+}
+
+
+// MARK: - Item Views
+
 struct BranchNodeView: View {
     @ObservedObject var node: BranchTreeNode
     let level: Int
@@ -303,33 +357,21 @@ struct BranchNodeView: View {
 
     private var indent: CGFloat { CGFloat(level * 16 + 20) }
 
+    private var iconName: String {
+        guard let branch = node.branch else { return "folder" }
+        return branch.isRemote ? "cloud" : "point.3.connected.trianglepath.dotted"
+    }
+    
     @ViewBuilder
     private var buttonContent: some View {
         HStack(spacing: 6) {
-            // Folder chevron
             if node.branch == nil {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 8, weight: .bold))
-                    .foregroundStyle(.secondary)
-                    .rotationEffect(.degrees(node.isExpanded ? 90 : 0))
+                Image(systemName: "chevron.right").font(.system(size: 8, weight: .bold)).foregroundStyle(.secondary).rotationEffect(.degrees(node.isExpanded ? 90 : 0))
             } else {
-                // Spacer to align branch names
                 Spacer().frame(width: 8)
             }
-            
-            // Icon
-            Image(systemName: node.branch == nil ? "folder" : (node.branch!.isRemote ? "cloud" : "point.3.connected.trianglepath.dotted"))
-                .font(.system(size: 12))
-                .foregroundStyle(iconColor)
-                .frame(width: 16, alignment: .center)
-            
-            // Name
-            Text(node.name)
-                .font(.system(size: 13))
-                .fontWeight(node.branch?.isCurrent ?? false ? .bold : .regular)
-                .foregroundStyle(isSelected ? .white : .primary)
-                .lineLimit(1)
-            
+            Image(systemName: iconName).font(.system(size: 12)).foregroundStyle(iconColor).frame(width: 16, alignment: .center)
+            Text(node.name).font(.system(size: 13)).fontWeight(node.branch?.isCurrent ?? false ? .bold : .regular).foregroundStyle(isSelected ? .white : .primary).lineLimit(1)
             Spacer()
         }
         .padding(.leading, indent)
@@ -344,24 +386,15 @@ struct BranchNodeView: View {
     }
     
     private var backgroundStyle: some View {
-        RoundedRectangle(cornerRadius: 6)
-            .fill(
-                isSelected ? Color.accentColor :
-                isHovered ? Color.primary.opacity(0.05) : Color.clear
-            )
+        RoundedRectangle(cornerRadius: 6).fill(isSelected ? Color.accentColor : isHovered ? Color.primary.opacity(0.05) : Color.clear)
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Button(action: {
-                if let branch = node.branch {
-                    selectedItem = .branchItem(branch.name) // Select the branch
-                } else {
-                    node.toggleExpanded() // Expand/collapse the folder
-                }
-            }) {
-                buttonContent
-            }
+                if let branch = node.branch { selectedItem = .branchItem(branch.name) }
+                else { node.toggleExpanded() }
+            }) { buttonContent }
             .buttonStyle(.plain)
             .background(backgroundStyle)
             .padding(.horizontal, 8)
@@ -381,7 +414,6 @@ struct BranchNodeView: View {
     }
 }
 
-
 private struct FixedFunctionButton: View {
     let option: FunctionListOption
     let isSelected: Bool
@@ -400,10 +432,7 @@ private struct FixedFunctionButton: View {
                 }
             }
             .padding(.horizontal, 16).padding(.vertical, 8)
-            .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(isSelected ? Color.accentColor : isHovered ? Color.primary.opacity(0.08) : Color.clear)
-            )
+            .background(RoundedRectangle(cornerRadius: 8).fill(isSelected ? Color.accentColor : isHovered ? Color.primary.opacity(0.08) : Color.clear))
         }
         .buttonStyle(.plain)
         .disabled(!option.isImplemented)
@@ -425,40 +454,22 @@ private struct TagItemButton: View {
     var body: some View {
         Button(action: onSelect) {
             HStack(spacing: 6) {
-                Spacer().frame(width: 8) // Indent spacer
-                Image(systemName: "tag")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Color.orange)
-                    .frame(width: 16, alignment: .center)
-                
-                Text(tag.name)
-                    .font(.system(size: 13))
-                    .foregroundStyle(isSelected ? .white : .primary)
-                    .lineLimit(1)
-                
+                Spacer().frame(width: 8)
+                Image(systemName: "tag").font(.system(size: 12)).foregroundStyle(Color.orange).frame(width: 16, alignment: .center)
+                Text(tag.name).font(.system(size: 13)).foregroundStyle(isSelected ? .white : .primary).lineLimit(1)
                 Spacer()
             }
-            .padding(.leading, 20) // Static indent for tags
+            .padding(.leading, 20)
             .padding(.vertical, 4)
             .padding(.trailing, 8)
         }
         .buttonStyle(.plain)
-        .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(
-                    isSelected ? Color.orange.opacity(0.8) :
-                    isHovered ? Color.primary.opacity(0.05) : Color.clear
-                )
-        )
+        .background(RoundedRectangle(cornerRadius: 6).fill(isSelected ? Color.orange.opacity(0.8) : isHovered ? Color.primary.opacity(0.05) : Color.clear))
         .padding(.horizontal, 8)
-        .onHover { hovering in
-            isHovered = hovering
-        }
+        .onHover { hovering in isHovered = hovering }
     }
 }
 
-// ** ADDED: A button for submodule items with double-click action **
-// ** 新增：一个带有双击操作的子模块项按钮 **
 private struct SubmoduleItemButton: View {
     let submoduleName: String
     let onDoubleTap: () -> Void
@@ -468,47 +479,26 @@ private struct SubmoduleItemButton: View {
     var body: some View {
         HStack(spacing: 6) {
             Spacer().frame(width: 8)
-            Image(systemName: "cube.box")
-                .font(.system(size: 12))
-                .foregroundStyle(Color.purple)
-                .frame(width: 16, alignment: .center)
-
-            Text(submoduleName)
-                .font(.system(size: 13))
-                .foregroundStyle(.primary)
-                .lineLimit(1)
-            
+            Image(systemName: "cube.box").font(.system(size: 12)).foregroundStyle(Color.purple).frame(width: 16, alignment: .center)
+            Text(submoduleName).font(.system(size: 13)).foregroundStyle(.primary).lineLimit(1)
             Spacer()
         }
         .padding(.leading, 20)
         .padding(.vertical, 4)
         .padding(.trailing, 8)
-        .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(isHovered ? Color.primary.opacity(0.05) : Color.clear)
-        )
+        .background(RoundedRectangle(cornerRadius: 6).fill(isHovered ? Color.primary.opacity(0.05) : Color.clear))
         .padding(.horizontal, 8)
-        .onHover { hovering in
-            isHovered = hovering
-        }
-        .onTapGesture(count: 2) {
-            onDoubleTap()
-        }
+        .onHover { hovering in isHovered = hovering }
+        .onTapGesture(count: 2) { onDoubleTap() }
     }
 }
 
-
-// MARK: - Preview
 #if DEBUG
 struct FunctionListView_Previews: PreviewProvider {
-    // A stateful container to make the preview interactive
-    // 一个有状态的容器，使预览可交互
     struct PreviewWrapper: View {
         @State private var selectedItem: SelectedFunctionItem? = .branchItem("main")
         @State private var expandedSections: Set<ExpandableFunctionType> = [.localBranches, .remoteBranches, .tags, .submodules]
-
-        // Mock data for preview
-        // 用于预览的模拟数据
+        
         private let mockBranches: [GitBranch] = [
             GitBranch(name: "main", isCurrent: true, isRemote: false, targetSha: "abc"),
             GitBranch(name: "develop", isCurrent: false, isRemote: false, targetSha: "def"),
@@ -519,34 +509,21 @@ struct FunctionListView_Previews: PreviewProvider {
             GitBranch(name: "origin/bugfix/login-crash", isCurrent: false, isRemote: true, targetSha: "mno"),
         ]
         
-        private let mockTags: [GitTag] = (1...20).map { i in
-            GitTag(name: "v1.0.\(i)", targetSha: "sha-\(i)")
-        }
-        
-        private let mockSubmodules: [String] = [
-            "External/SwiftGitX",
-            "Libraries/Networking",
-            "Frameworks/UIComponents"
-        ]
+        private let mockTags: [GitTag] = (1...20).map { i in GitTag(name: "v1.0.\(i)", targetSha: "sha-\(i)") }
+        private let mockSubmodules: [String] = ["External/SwiftGitX", "Libraries/Networking", "Frameworks/UIComponents"]
 
         var body: some View {
             FunctionListView(
                 selectedItem: $selectedItem,
                 expandedSections: $expandedSections,
-                repository: nil,
-                branches: mockBranches,
-                tags: mockTags,
-                submodules: mockSubmodules,
-                onOpenSubmodule: { submoduleName in
-                    print("ACTION: Double-clicked to open submodule: \(submoduleName)")
-                }
+                repository: nil, branches: mockBranches, tags: mockTags, submodules: mockSubmodules,
+                onOpenSubmodule: { submoduleName in print("ACTION: Double-clicked to open submodule: \(submoduleName)") }
             )
         }
     }
 
     static var previews: some View {
-        PreviewWrapper()
-            .frame(width: 250, height: 600)
+        PreviewWrapper().frame(width: 250, height: 600)
     }
 }
 #endif

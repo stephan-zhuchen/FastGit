@@ -9,8 +9,6 @@ class BranchTreeNode: Identifiable, ObservableObject {
     var branch: GitBranch? // If nil, this node is a folder. 如果为nil，则此节点是文件夹。
     var children: [BranchTreeNode] = []
     
-    // ** MODIFICATION: Default state is now collapsed **
-    // ** 修改：默认状态现在是折叠的 **
     @Published var isExpanded: Bool = false
 
     init(name: String, branch: GitBranch? = nil) {
@@ -29,18 +27,15 @@ class BranchTreeNode: Identifiable, ObservableObject {
     /// 根据路径组件递归地添加子节点。
     private func addChild(branch: GitBranch, components: [String]) {
         guard let firstComponent = components.first else {
-            // Should not happen if called correctly
             return
         }
         
         let remainingComponents = Array(components.dropFirst())
 
         if remainingComponents.isEmpty {
-            // This is the final branch node
             let childNode = BranchTreeNode(name: firstComponent, branch: branch)
             children.append(childNode)
         } else {
-            // This is a folder path, find or create the folder node
             if let existingChild = children.first(where: { $0.name == firstComponent && $0.branch == nil }) {
                 existingChild.addChild(branch: branch, components: remainingComponents)
             } else {
@@ -55,11 +50,10 @@ class BranchTreeNode: Identifiable, ObservableObject {
     /// 对子节点进行排序：文件夹优先，然后是分支，都按字母顺序排列。
     func sort() {
         children.sort {
-            if $0.branch == nil && $1.branch != nil { return true } // Folder vs Branch
-            if $0.branch != nil && $1.branch == nil { return false } // Branch vs Folder
-            return $0.name.lowercased() < $1.name.lowercased() // Same type, sort by name
+            if $0.branch == nil && $1.branch != nil { return true }
+            if $0.branch != nil && $1.branch == nil { return false }
+            return $0.name.lowercased() < $1.name.lowercased()
         }
-        // Recursively sort children
         children.forEach { $0.sort() }
     }
 
@@ -75,6 +69,39 @@ class BranchTreeNode: Identifiable, ObservableObject {
         
         rootNode.sort()
         return rootNode.children
+    }
+
+    // ** MODIFIED: Updated filterTree to accept a generic matching closure **
+    // ** 修改：更新 filterTree 以接受一个通用的匹配闭包 **
+    static func filterTree(
+        _ nodes: [BranchTreeNode],
+        with searchText: String,
+        checkMatch: (String, String) -> Bool
+    ) -> [BranchTreeNode] {
+        if searchText.isEmpty {
+            return nodes
+        }
+        
+        var filteredNodes: [BranchTreeNode] = []
+        
+        for node in nodes {
+            if let branch = node.branch {
+                if checkMatch(branch.name, searchText) {
+                    filteredNodes.append(node)
+                }
+            }
+            else {
+                let filteredChildren = filterTree(node.children, with: searchText, checkMatch: checkMatch)
+                if !filteredChildren.isEmpty {
+                    let folderCopy = BranchTreeNode(name: node.name)
+                    folderCopy.children = filteredChildren
+                    folderCopy.isExpanded = true
+                    filteredNodes.append(folderCopy)
+                }
+            }
+        }
+        
+        return filteredNodes
     }
 }
 
