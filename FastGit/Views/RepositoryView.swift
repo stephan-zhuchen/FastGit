@@ -74,6 +74,8 @@ struct RepositoryView: View {
         switch item {
         case .fixedOption(let option):
             switch option {
+            case .defaultHistory:
+                HistoryView(repository: repository)
             case .localChanges:
                 placeholderView(for: "本地修改", icon: "doc.text.below.ecg", color: .blue)
             case .stashList:

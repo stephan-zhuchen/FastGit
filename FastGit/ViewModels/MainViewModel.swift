@@ -88,6 +88,9 @@ class MainViewModel: ObservableObject {
             
             // 获取仓库数据
             await loadRepositoryData()
+            
+            // 设置默认选中项为“本地修改”
+//            selectedFunctionItem = .changes
         } else {
             // 如果打开失败，停止访问
             stopAccessingCurrentRepository()
@@ -108,7 +111,7 @@ class MainViewModel: ObservableObject {
         self.submodules = [] // 暂不实现
 
         // 重置选择状态，默认选中本地分支类别
-        self.selectedFunctionItem = .expandableType(.localBranches)
+        self.selectedFunctionItem = .fixedOption(.defaultHistory)
 
         // 默认展开本地分支
         self.expandedSections = [.localBranches]

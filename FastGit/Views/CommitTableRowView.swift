@@ -125,24 +125,9 @@ struct CommitTableRowView: View {
     /// - Returns: 格式化的时间字符串
     private func formatCommitDate(_ date: Date) -> String {
         let formatter = DateFormatter()
-        let now = Date()
-        let timeInterval = now.timeIntervalSince(date)
-        
-        if timeInterval < 60 {
-            return "刚刚"
-        } else if timeInterval < 3600 {
-            let minutes = Int(timeInterval / 60)
-            return "\(minutes)分钟前"
-        } else if timeInterval < 86400 {
-            let hours = Int(timeInterval / 3600)
-            return "\(hours)小时前"
-        } else if timeInterval < 2592000 { // 30天
-            let days = Int(timeInterval / 86400)
-            return "\(days)天前"
-        } else {
-            formatter.dateFormat = "yyyy/MM/dd"
-            return formatter.string(from: date)
-        }
+        // 设置日期格式为 "年-月-日 时:分:秒"
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        return formatter.string(from: date)
     }
 }
 

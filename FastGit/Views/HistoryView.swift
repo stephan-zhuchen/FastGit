@@ -41,7 +41,8 @@ struct HistoryView: View {
                 historyTableView
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // 为整个视图设置最小宽度和高度，防止窗口过小导致内容显示不佳
+        .frame(minWidth: 650, minHeight: 400)
         .onAppear {
             // 当历史视图出现时，加载当前仓库的提交历史
             Task {
@@ -79,7 +80,6 @@ struct HistoryView: View {
     }
     
     /// 错误状态视图
-    /// - Parameter message: 错误信息
     private func errorView(_ message: String) -> some View {
         VStack(spacing: 20) {
             Image(systemName: "exclamationmark.triangle")
@@ -149,7 +149,6 @@ struct HistoryView: View {
                 Spacer()
                 
                 HStack(spacing: 12) {
-                    // 提交计数标签
                     Text("\(commits.count) 个提交")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -158,11 +157,8 @@ struct HistoryView: View {
                         .background(.quaternary)
                         .clipShape(Capsule())
                     
-                    // 刷新按钮
                     Button(action: {
-                        Task {
-                            await loadCommitHistory()
-                        }
+                        Task { await loadCommitHistory() }
                     }) {
                         Image(systemName: "arrow.clockwise")
                             .font(.system(size: 14, weight: .medium))
@@ -178,62 +174,49 @@ struct HistoryView: View {
             
             Divider()
             
-            // 表格头部
-            HStack(spacing: 0) {
-                // 提交信息列头
-                Text("路线图与主题")
-                    .font(.caption)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 12)
-                
-                // 作者列头
-                Text("作者")
-                    .font(.caption)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 120, alignment: .leading)
-                    .padding(.horizontal, 8)
-                
-                // SHA列头
-                Text("提交指纹")
-                    .font(.caption)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 100, alignment: .center)
-                    .padding(.horizontal, 8)
-                
-                // 时间列头
-                Text("提交时间")
-                    .font(.caption)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 140, alignment: .trailing)
-                    .padding(.horizontal, 12)
-            }
-            .padding(.vertical, 8)
-            .background(.quaternary.opacity(0.3))
-            
-            Divider()
-            
-            // 提交数据表格
-            ScrollView {
-                LazyVStack(spacing: 0) {
-                    ForEach(Array(commits.enumerated()), id: \.element.id) { index, commit in
-                        CommitTableRowView(commit: commit, isEven: index % 2 == 0)
-                            .onTapGesture {
-                                // TODO: 选择提交处理
-                                print("选择提交: \(commit.shortSha)")
+            Table(commits) {
+                // 1. 路线图与主题列 (Roadmap & Subject)
+                TableColumn("路线图与主题", content: { commit in
+                    VStack(alignment: .leading, spacing: 4) {
+                        if commit.hasReferences {
+                            HStack(spacing: 4) {
+                                ForEach(commit.branches, id: \.self) { branchName in
+                                    BranchTagBadge(text: branchName, type: .branch, isLocalBranch: !branchName.contains("/"))
+                                }
+                                ForEach(commit.tags, id: \.self) { tagName in
+                                    BranchTagBadge(text: tagName, type: .tag)
+                                }
+                                Spacer()
                             }
-                        
-                        if index < commits.count - 1 {
-                            Divider()
-                                .padding(.leading, 12)
                         }
+                        Text(commit.message.trimmingCharacters(in: .whitespacesAndNewlines))
+                            .font(.system(size: 13))
                     }
-                }
+                    .padding(.vertical, 4)
+                })
+                .width(min: 250, ideal: 400)
+                
+                // 2. 作者列 (Author)
+                TableColumn("作者", content: { commit in
+                    Text(commit.author.name)
+                })
+                .width(min: 80, ideal: 120, max: 200)
+
+                // 3. 提交指纹列 (SHA)
+                TableColumn("提交指纹", content: { commit in
+                    Text(commit.shortSha)
+                        .font(.system(.body, design: .monospaced))
+                })
+                .width(min: 60, ideal: 60, max: 100)
+
+                // 4. 提交时间列 (Date)
+                TableColumn("提交时间", content: { commit in
+                    Text(formatCommitDate(commit.date))
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                })
+                .width(min: 120, ideal: 120, max: 150)
             }
+            .tableStyle(.inset(alternatesRowBackgrounds: true))
         }
         .background(.regularMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 10))
@@ -250,6 +233,13 @@ struct HistoryView: View {
         commits = fetchedCommits
         
         isLoading = false
+    }
+    
+    private func formatCommitDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        // 设置日期格式为 "年-月-日 时:分:秒"
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        return formatter.string(from: date)
     }
 }
 

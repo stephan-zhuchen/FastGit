@@ -24,7 +24,7 @@ struct AppConfig {
     
     // MARK: - Git配置
     struct Git {
-        static let maxCommitsToLoad = 100
+        static let maxCommitsToLoad = 500
         static let commitShaLength = 7
         static let defaultBranch = "main"
     }

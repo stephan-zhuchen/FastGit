@@ -9,6 +9,7 @@ import SwiftUI
 
 /// 功能列表选项类型
 enum FunctionListOption: String, CaseIterable, Identifiable {
+    case defaultHistory = "提交历史"
     case localChanges = "本地修改"
     case stashList = "Stash列表"
     
@@ -17,6 +18,8 @@ enum FunctionListOption: String, CaseIterable, Identifiable {
     /// 图标名称
     var iconName: String {
         switch self {
+        case .defaultHistory:
+            return "doc.text.below.ecg"
         case .localChanges:
             return "doc.text.below.ecg"
         case .stashList:
@@ -26,7 +29,12 @@ enum FunctionListOption: String, CaseIterable, Identifiable {
     
     /// 是否已实现
     var isImplemented: Bool {
-        return false  // 暂时都未实现
+        switch self {
+        case .defaultHistory:
+            return true
+        default:
+            return false
+        }
     }
 }
 

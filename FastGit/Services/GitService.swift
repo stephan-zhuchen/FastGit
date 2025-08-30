@@ -199,14 +199,14 @@ class GitService: ObservableObject {
             
             isLoading = false
             
-            print("✅ 获取到 \(commits.count) 个提交记录")
-            for commit in commits.prefix(3) {
-                let refsInfo = commit.hasReferences ? " [分支: \(commit.branches.joined(separator: ", ")), 标签: \(commit.tags.joined(separator: ", "))]" : ""
-                print("   - \(commit.shortSha): \(commit.message)\(refsInfo)")
-            }
-            if commits.count > 3 {
-                print("   ... 及其他 \(commits.count - 3) 个提交")
-            }
+//            print("✅ 获取到 \(commits.count) 个提交记录")
+//            for commit in commits.prefix(3) {
+//                let refsInfo = commit.hasReferences ? " [分支: \(commit.branches.joined(separator: ", ")), 标签: \(commit.tags.joined(separator: ", "))]" : ""
+//                print("   - \(commit.shortSha): \(commit.message)\(refsInfo)")
+//            }
+//            if commits.count > 3 {
+//                print("   ... 及其他 \(commits.count - 3) 个提交")
+//            }
             
             return (commits, branches, tags)
             
