@@ -15,7 +15,7 @@ class MainViewModel: ObservableObject {
     // MARK: - 单例
     static let shared = MainViewModel()
     
-    // MARK: - 发布属性
+    // MARK: - Published Properties
     @Published var currentRepository: GitRepository?
     @Published var commits: [GitCommit] = []
     @Published var isLoading = false
@@ -29,20 +29,25 @@ class MainViewModel: ObservableObject {
     @Published var selectedFunctionItem: SelectedFunctionItem? = .expandableType(.localBranches)
     @Published var expandedSections: Set<ExpandableFunctionType> = [.localBranches]
 
-    // MARK: - 私有属性
+    // MARK: - Private Properties
     private var repositoryURL: URL?
     private var isAccessingSecurityScopedResource = false
     
-    // MARK: - 依赖
+    // ** ADDED: Data Cache **
+    // ** 新增：数据缓存 **
+    private var repositoryCache: [String: RepositoryDataCache] = [:]
+    
+    // MARK: - Dependencies
     private let gitService = GitService.shared
     private let repositoryManager = RepositoryManager.shared
     
-    // MARK: - 初始化
+    // MARK: - Initialization
     init() {
-        setupBindings()
+        // The setupBindings() call is no longer needed with the new architecture.
+        // 在新的架构下不再需要 setupBindings() 调用。
     }
     
-    // MARK: - 公共方法
+    // MARK: - Public Methods
     
     /// 打开仓库
     /// - Parameter url: 仓库URL
@@ -57,19 +62,20 @@ class MainViewModel: ObservableObject {
         
         let path = url.path
         
-        // 检查是否是Git仓库
         let gitPath = url.appendingPathComponent(".git").path
         guard FileManager.default.fileExists(atPath: gitPath) else {
             errorMessage = "所选文件夹不是一个Git仓库"
             return
         }
         
-        // 为新打开的仓库创建SecurityScopedBookmark（关键修复）
         let securityManager = SecurityScopedResourceManager.shared
-        let bookmarkCreated = securityManager.createBookmark(for: url)
-        if bookmarkCreated {
-        } else {
-            print("⚠️ 为新仓库创建安全书签失败: \(path)")
+        if !securityManager.hasValidAccess(for: path) {
+            let bookmarkCreated = securityManager.createBookmark(for: url)
+            if !bookmarkCreated {
+                print("⚠️ 为新仓库创建安全书签失败: \(path)")
+                // Optionally, show an error to the user.
+                // （可选）向用户显示错误。
+            }
         }
         
         // 开始访问安全作用域资源
@@ -78,44 +84,67 @@ class MainViewModel: ObservableObject {
         
         print("🔐 安全作用域访问: \(isAccessingSecurityScopedResource ? "成功" : "失败")")
         
-        // 打开仓库
         if let repository = await gitService.openRepository(at: path) {
             self.currentRepository = repository
-            
-            // 将仓库添加到RepositoryManager（新仓库排在第一位）
             repositoryManager.setCurrentRepositoryAsNew(repository)
             
-            // 获取仓库数据
-            await loadRepositoryData()
-            
-            // 设置默认选中项为“本地修改”
-//            selectedFunctionItem = .changes
+            // ** MODIFICATION: Call the new caching data loader **
+            // ** 修改：调用新的带缓存的数据加载方法 **
+            await loadRepositoryData(for: repository)
         } else {
-            // 如果打开失败，停止访问
             stopAccessingCurrentRepository()
         }
     }
     
-    /// 加载仓库核心数据（提交、分支、标签等）
-    func loadRepositoryData() async {
-        guard let repository = currentRepository else { return }
-        
+    func loadRepositoryData(for repository: GitRepository) async {
+        // 1. Check cache first
+        if let cachedData = repositoryCache[repository.path] {
+            print("✅ Using cached data for repository: \(repository.displayName)")
+            updatePublishedProperties(from: cachedData)
+            selectedFunctionItem = .fixedOption(.defaultHistory) // Reset selection
+            return
+        }
+
+        // 2. If not cached, fetch fresh data
+        print(" Sourcing new data for repository: \(repository.displayName)")
         isLoading = true
         let (fetchedCommits, fetchedBranches, fetchedTags) = await gitService.fetchCommitHistory(for: repository)
 
-        // 更新UI相关的属性
+        // 3. Update UI
         self.commits = fetchedCommits
         self.branches = fetchedBranches
         self.tags = fetchedTags
-        self.submodules = [] // 暂不实现
+        self.submodules = [] // Placeholder
 
-        // 重置选择状态，默认选中本地分支类别
+        // 4. Store in cache
+        let newCacheEntry = RepositoryDataCache(
+            branches: fetchedBranches,
+            tags: fetchedTags,
+            commits: fetchedCommits,
+            submodules: [] // Placeholder
+        )
+        repositoryCache[repository.path] = newCacheEntry
+        
+        // 5. Reset UI state
         self.selectedFunctionItem = .fixedOption(.defaultHistory)
-
-        // 默认展开本地分支
-        self.expandedSections = [.localBranches]
-
+        self.expandedSections = []
+//        self.expandedSections = [.localBranches, .remoteBranches] // Expand both by default
         isLoading = false
+    }
+
+    /// Manually forces a refresh for the given repository.
+    /// 为指定仓库手动强制刷新。
+    func refreshData(for repository: GitRepository) async {
+        print(" Manual refresh triggered for: \(repository.displayName)")
+        repositoryCache.removeValue(forKey: repository.path)
+        await loadRepositoryData(for: repository)
+    }
+
+    /// Clears the cache for a specific repository, e.g., when its tab is closed.
+    /// 为特定仓库清除缓存（例如，当其标签页被关闭时）。
+    func clearCache(for repository: GitRepository) {
+        repositoryCache.removeValue(forKey: repository.path)
+        print(" Cache cleared for repository: \(repository.displayName)")
     }
     
     /// 显示文件选择器
@@ -128,6 +157,8 @@ class MainViewModel: ObservableObject {
         errorMessage = nil
     }
     
+    // MARK: - Private Methods
+    
     /// 停止访问当前仓库的安全作用域资源
     private func stopAccessingCurrentRepository() {
         if isAccessingSecurityScopedResource, let url = repositoryURL {
@@ -138,32 +169,19 @@ class MainViewModel: ObservableObject {
         }
     }
     
-    deinit {
-        // 使用Task.detached在主线程上执行清理操作
-        let url = repositoryURL
-        let isAccessing = isAccessingSecurityScopedResource
-        
-        if isAccessing, let url = url {
-            url.stopAccessingSecurityScopedResource()
-            print("🔓 在deinit中已停止访问安全作用域资源")
-        }
+    /// Updates all relevant @Published properties from a cache entry.
+    /// 从一个缓存条目更新所有相关的 @Published 属性。
+    private func updatePublishedProperties(from cache: RepositoryDataCache) {
+        self.branches = cache.branches
+        self.tags = cache.tags
+        self.commits = cache.commits
+        self.submodules = cache.submodules
     }
     
-    // MARK: - 私有方法
-    
-    /// 设置数据绑定
-    private func setupBindings() {
-        // 监听GitService的状态变化
-        gitService.$currentRepository
-            .receive(on: DispatchQueue.main)
-            .assign(to: &$currentRepository)
-        
-        gitService.$isLoading
-            .receive(on: DispatchQueue.main)
-            .assign(to: &$isLoading)
-        
-        gitService.$errorMessage
-            .receive(on: DispatchQueue.main)
-            .assign(to: &$errorMessage)
-    }
+    // ** REMOVED: deinit is no longer safe or necessary here **
+    // ** 移除：deinit 在这里不再安全或必要 **
+    // deinit {
+    //     stopAccessingCurrentRepository()
+    // }
 }
+

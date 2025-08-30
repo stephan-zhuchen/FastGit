@@ -89,17 +89,14 @@ struct FunctionListView: View {
     @State private var remoteBranchTree: [BranchTreeNode] = []
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 0) {
-                fixedFunctionsSection
-                Divider().padding(.horizontal, 12).padding(.vertical, 8)
-                expandableFunctionsSection
-                Spacer(minLength: 20)
-            }
-            .padding(.vertical, 12)
+        // ** FIX: Use VStack instead of ScrollView to control scrolling behavior **
+        // ** 修复：使用 VStack 替代 ScrollView 来控制滚动行为 **
+        VStack(spacing: 0) {
+            fixedFunctionsSection
+            Divider().padding(.horizontal, 12).padding(.vertical, 8)
+            expandableFunctionsSection
         }
-        // ** MODIFICATION: Removed fixed width **
-        // ** 修改：移除了固定的宽度 **
+        .padding(.vertical, 12)
         .background(.regularMaterial)
         .onAppear(perform: buildTrees)
         .onChange(of: branches) { _, _ in buildTrees() }
@@ -130,65 +127,88 @@ struct FunctionListView: View {
         }
     }
     
+    // ** FIX: Wrap expandable content in a ScrollView **
+    // ** 修复：将可展开内容包裹在 ScrollView 中 **
     private var expandableFunctionsSection: some View {
-        VStack(spacing: 8) {
-            HStack {
-                Text("仓库").font(.headline).fontWeight(.semibold).foregroundStyle(.primary)
+        ScrollView {
+            VStack(spacing: 8) {
+                HStack {
+                    Text("仓库").font(.headline).fontWeight(.semibold).foregroundStyle(.primary)
+                    Spacer()
+                }
+                .padding(.horizontal, 16).padding(.bottom, 4)
+
+                // Local Branches Section
+                ExpandableFunctionSection(
+                    type: .localBranches,
+                    isExpanded: expandedSections.contains(.localBranches),
+                    itemCount: branches.filter { !$0.isRemote }.count,
+                    onToggleExpansion: { toggleSection(.localBranches) }
+                ) {
+                    // This content is usually short, no ScrollView needed
+                    // 这部分内容通常很短，不需要 ScrollView
+                    VStack(spacing: 2) {
+                        ForEach(localBranchTree) { node in
+                            BranchNodeView(node: node, level: 0, selectedItem: $selectedItem)
+                        }
+                    }
+                }
+
+                // Remote Branches Section
+                ExpandableFunctionSection(
+                    type: .remoteBranches,
+                    isExpanded: expandedSections.contains(.remoteBranches),
+                    itemCount: branches.filter { $0.isRemote }.count,
+                    onToggleExpansion: { toggleSection(.remoteBranches) }
+                ) {
+                    // ** FIX: Limit height and make this section scrollable **
+                    // ** 修复：限制高度并使此部分可滚动 **
+                    ScrollView {
+                        VStack(spacing: 2) {
+                            ForEach(remoteBranchTree) { node in
+                                BranchNodeView(node: node, level: 0, selectedItem: $selectedItem)
+                            }
+                        }
+                    }
+                    .frame(maxHeight: 200) // Adjust max height as needed (可根据需要调整最大高度)
+                }
+                
+                // Tags Section
+                ExpandableFunctionSection(
+                    type: .tags,
+                    isExpanded: expandedSections.contains(.tags),
+                    itemCount: tags.count,
+                    onToggleExpansion: { toggleSection(.tags) }
+                ) {
+                    // ** FIX: Limit height and make this section scrollable **
+                    // ** 修复：限制高度并使此部分可滚动 **
+                    ScrollView {
+                        VStack(spacing: 2) {
+                            ForEach(tags) { tag in
+                                TagItemButton(
+                                    tag: tag,
+                                    isSelected: selectedItem == .tagItem(tag.name),
+                                    onSelect: { selectedItem = .tagItem(tag.name) }
+                                )
+                            }
+                        }
+                    }
+                    .frame(maxHeight: 200) // Adjust max height as needed (可根据需要调整最大高度)
+                }
+                
+                // Submodules Section
+                ExpandableFunctionSection(
+                    type: .submodules,
+                    isExpanded: expandedSections.contains(.submodules),
+                    itemCount: submodules.count,
+                    onToggleExpansion: { toggleSection(.submodules) }
+                ) {
+                    // Placeholder
+                }
+                
+                // This Spacer pushes everything up
+                // 这个 Spacer 将所有内容向上推
                 Spacer()
-            }
-            .padding(.horizontal, 16).padding(.bottom, 4)
-
-            // Local Branches Section
-            ExpandableFunctionSection(
-                type: .localBranches,
-                isExpanded: expandedSections.contains(.localBranches),
-                itemCount: branches.filter { !$0.isRemote }.count,
-                onToggleExpansion: { toggleSection(.localBranches) }
-            ) {
-                ForEach(localBranchTree) { node in
-                    BranchNodeView(node: node, level: 0, selectedItem: $selectedItem)
-                }
-            }
-
-            // Remote Branches Section
-            ExpandableFunctionSection(
-                type: .remoteBranches,
-                isExpanded: expandedSections.contains(.remoteBranches),
-                itemCount: branches.filter { $0.isRemote }.count,
-                onToggleExpansion: { toggleSection(.remoteBranches) }
-            ) {
-                ForEach(remoteBranchTree) { node in
-                    BranchNodeView(node: node, level: 0, selectedItem: $selectedItem)
-                }
-            }
-            
-            // ** FIX: Added Tags section back **
-            // ** 修复：将标签列表部分加回来 **
-            ExpandableFunctionSection(
-                type: .tags,
-                isExpanded: expandedSections.contains(.tags),
-                itemCount: tags.count,
-                onToggleExpansion: { toggleSection(.tags) }
-            ) {
-                ForEach(tags) { tag in
-                    TagItemButton(
-                        tag: tag,
-                        isSelected: selectedItem == .tagItem(tag.name),
-                        onSelect: { selectedItem = .tagItem(tag.name) }
-                    )
-                }
-            }
-            
-            // ** FIX: Added Submodules section back (as placeholder) **
-            // ** 修复：将子模块部分加回来（作为占位符） **
-            ExpandableFunctionSection(
-                type: .submodules,
-                isExpanded: expandedSections.contains(.submodules),
-                itemCount: submodules.count,
-                onToggleExpansion: { toggleSection(.submodules) }
-            ) {
-                // Placeholder for submodule items
-                // 子模块项的占位符
             }
         }
     }
@@ -203,6 +223,10 @@ struct FunctionListView: View {
 }
 
 // MARK: - Reusable Components
+
+// ... (ExpandableFunctionSection, BranchNodeView, etc. remain the same)
+// ... (ExpandableFunctionSection, BranchNodeView 等组件保持不变)
+
 
 private struct ExpandableFunctionSection<Content: View>: View {
     let type: ExpandableFunctionType
@@ -412,52 +436,47 @@ private struct TagItemButton: View {
 }
 
 
-// ** ADDED: Preview Provider for Xcode Previews **
-// ** 新增：用于 Xcode 预览的 Preview Provider **
-#Preview {
-    // A stateful container to host the FunctionListView for previewing
-    // 一个有状态的容器，用于承载 FunctionListView 以便预览
-    struct FunctionListViewPreview: View {
+// MARK: - Preview
+#if DEBUG
+struct FunctionListView_Previews: PreviewProvider {
+    // A stateful container to make the preview interactive
+    // 一个有状态的容器，使预览可交互
+    struct PreviewWrapper: View {
         @State private var selectedItem: SelectedFunctionItem? = .branchItem("main")
         @State private var expandedSections: Set<ExpandableFunctionType> = [.localBranches, .remoteBranches, .tags]
 
-        // Mock data that mimics a real repository
-        // 模拟真实仓库的 Mock 数据
+        // Mock data for preview
+        // 用于预览的模拟数据
         private let mockBranches: [GitBranch] = [
-            // Local Branches
-            GitBranch(name: "main", isCurrent: true, isRemote: false, targetSha: "abc111"),
-            GitBranch(name: "develop", isCurrent: false, isRemote: false, targetSha: "abc222"),
-            
-            // Remote Branches with hierarchy
-            GitBranch(name: "origin/main", isCurrent: false, isRemote: true, targetSha: "abc333"),
-            GitBranch(name: "origin/develop", isCurrent: false, isRemote: true, targetSha: "abc444"),
-            GitBranch(name: "origin/feature/new-login", isCurrent: false, isRemote: true, targetSha: "abc555"),
-            GitBranch(name: "origin/feature/user-profile", isCurrent: false, isRemote: true, targetSha: "abc666"),
-            GitBranch(name: "origin/fix/login-button", isCurrent: false, isRemote: true, targetSha: "abc777"),
-            GitBranch(name: "origin/dependabot/npm/react-18", isCurrent: false, isRemote: true, targetSha: "abc888")
+            GitBranch(name: "main", isCurrent: true, isRemote: false, targetSha: "abc"),
+            GitBranch(name: "develop", isCurrent: false, isRemote: false, targetSha: "def"),
+            GitBranch(name: "origin/main", isCurrent: false, isRemote: true, targetSha: "abc"),
+            GitBranch(name: "origin/develop", isCurrent: false, isRemote: true, targetSha: "def"),
+            GitBranch(name: "origin/feature/new-ui-component", isCurrent: false, isRemote: true, targetSha: "ghi"),
+            GitBranch(name: "origin/feature/user-authentication", isCurrent: false, isRemote: true, targetSha: "jkl"),
+            GitBranch(name: "origin/bugfix/login-crash", isCurrent: false, isRemote: true, targetSha: "mno"),
         ]
         
-        private let mockTags: [GitTag] = [
-            GitTag(name: "v1.0.0", targetSha: "def111"),
-            GitTag(name: "v1.0.1", targetSha: "def222"),
-            GitTag(name: "v2.0.0-beta", targetSha: "def333")
-        ]
-        
-        private let mockRepo = GitRepository(name: "PreviewRepo", path: "/dev/null")
-        
+        private let mockTags: [GitTag] = (1...20).map { i in
+            GitTag(name: "v1.0.\(i)", targetSha: "sha-\(i)")
+        }
+
         var body: some View {
             FunctionListView(
                 selectedItem: $selectedItem,
                 expandedSections: $expandedSections,
-                repository: mockRepo,
+                repository: nil,
                 branches: mockBranches,
                 tags: mockTags,
-                submodules: ["Submodule1"]
+                submodules: []
             )
-            .frame(height: 700) // Give it a fixed height for preview
         }
     }
-    
-    return FunctionListViewPreview()
+
+    static var previews: some View {
+        PreviewWrapper()
+            .frame(width: 250, height: 600)
+    }
 }
+#endif
 

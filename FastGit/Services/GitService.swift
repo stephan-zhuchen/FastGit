@@ -159,7 +159,7 @@ class GitService: ObservableObject {
             if let startSha = startingFromSha {
                 let oid = try OID(hex: startSha)
                 let startCommit: Commit = try swiftGitXRepo.show(id: oid)
-                commitSequence = try swiftGitXRepo.log(from: startCommit)
+                commitSequence = swiftGitXRepo.log(from: startCommit)
             } else {
                 commitSequence = try swiftGitXRepo.log()
             }
@@ -368,7 +368,7 @@ class GitService: ObservableObject {
                 if map[sha] == nil {
                     map[sha] = []
                 }
-                map[sha]?.append(branch.shortName)
+                map[sha]?.append(branch.name)
             }
         }
         return map

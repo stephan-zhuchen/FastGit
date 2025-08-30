@@ -17,7 +17,7 @@ struct RepositoryView: View {
     // ** 新增：用于可变侧边栏的状态 **
     @AppStorage("sidebarWidth") private var sidebarWidth: Double = 250.0
     private let minSidebarWidth: Double = 200
-    private let maxSidebarWidth: Double = 400
+    private let maxSidebarWidth: Double = 500
 
     init(
         viewModel: MainViewModel,
@@ -69,6 +69,14 @@ struct RepositoryView: View {
         }
         .navigationTitle(repository.displayName)
         .navigationSubtitle(repository.path)
+        // ** MODIFICATION: Use .task(id:) to trigger loading only when the repo changes **
+        // ** 修改：使用 .task(id:) 来确保只在仓库变化时触发加载 **
+        .task(id: repository.path) {
+            // ** FIX: Explicitly capture viewModel to help the compiler **
+            // ** 修复：显式捕获 viewModel 以帮助编译器 **
+            let vm = viewModel
+            await vm.loadRepositoryData(for: repository)
+        }
     }
     
     // ... (The rest of the file remains the same)
