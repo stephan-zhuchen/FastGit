@@ -44,11 +44,22 @@ struct ContentView: View {
                         }
                     )
                 } else if let repository = repositoryForTabId(selectedTab) {
-                    // 仓库视图 - 注入ViewModel
+                    // ** FIX: Pass the onOpenSubmodule callback to RepositoryView **
+                    // ** 修复：将 onOpenSubmodule 回调传递给 RepositoryView **
                     RepositoryView(
                         viewModel: viewModel,
                         repository: repository,
-                        onClose: nil
+                        onClose: { _ in
+                            closeRepository(repository)
+                        },
+                        onOpenSubmodule: { submoduleURL in
+                            // When a submodule is double-clicked, call the same logic
+                            // as opening a new repository.
+                            // 当子模块被双击时，调用与打开新仓库相同的逻辑。
+                            Task {
+                                await openNewRepository(at: submoduleURL)
+                            }
+                        }
                     )
                 }
             }
@@ -86,16 +97,19 @@ struct ContentView: View {
         .onChange(of: selectedTab) { _, newTabId in
             Task {
                 if let repository = repositoryForTabId(newTabId) {
-                    // 如果切换到新的仓库Tab，则通知ViewModel加载新数据
-                    if viewModel.currentRepository?.id != repository.id {
-                        await viewModel.openRepository(at: URL(fileURLWithPath: repository.path))
-                    }
+                    // If switching to a new repository tab, notify the ViewModel.
+                    // The cache will prevent redundant reloads.
+                    // 如果切换到一个仓库标签页，通知 ViewModel。缓存机制会防止重复加载。
+                    await viewModel.loadRepositoryData(for: repository)
+                    viewModel.currentRepository = repository
                 } else {
-                    // 切换到欢迎页面，清空数据
+                    // Switched to Welcome View, clear the data.
+                    // 切换到欢迎页面，清空数据。
                     viewModel.currentRepository = nil
                     viewModel.commits = []
                     viewModel.branches = []
                     viewModel.tags = []
+                    viewModel.submodules = []
                 }
             }
         }
@@ -154,11 +168,16 @@ struct ContentView: View {
             return
         }
         
+        let closingTabId = index + 1
+        
+        // Clear cache for the closed repository
+        viewModel.clearCache(for: repository)
+        
         openRepositories.remove(at: index)
         
-        if selectedTab == index + 1 {
+        if selectedTab == closingTabId {
             selectedTab = 0
-        } else if selectedTab > index + 1 {
+        } else if selectedTab > closingTabId {
             selectedTab -= 1
         }
         

@@ -97,38 +97,39 @@ class MainViewModel: ObservableObject {
     }
     
     func loadRepositoryData(for repository: GitRepository) async {
-        // 1. Check cache first
         if let cachedData = repositoryCache[repository.path] {
             print("✅ Using cached data for repository: \(repository.displayName)")
             updatePublishedProperties(from: cachedData)
-            selectedFunctionItem = .fixedOption(.defaultHistory) // Reset selection
+            selectedFunctionItem = .fixedOption(.defaultHistory)
             return
         }
 
-        // 2. If not cached, fetch fresh data
         print(" Sourcing new data for repository: \(repository.displayName)")
         isLoading = true
-        let (fetchedCommits, fetchedBranches, fetchedTags) = await gitService.fetchCommitHistory(for: repository)
+        
+        // Fetch all data concurrently for better performance
+        // 并发获取所有数据以提升性能
+        async let historyData = gitService.fetchCommitHistory(for: repository)
+        async let submoduleData = gitService.fetchSubmodules(for: repository)
+        
+        let (fetchedCommits, fetchedBranches, fetchedTags) = await historyData
+        let fetchedSubmodules = await submoduleData
 
-        // 3. Update UI
         self.commits = fetchedCommits
         self.branches = fetchedBranches
         self.tags = fetchedTags
-        self.submodules = [] // Placeholder
+        self.submodules = fetchedSubmodules // ** Update submodules **
 
-        // 4. Store in cache
         let newCacheEntry = RepositoryDataCache(
             branches: fetchedBranches,
             tags: fetchedTags,
             commits: fetchedCommits,
-            submodules: [] // Placeholder
+            submodules: fetchedSubmodules // ** Save to cache **
         )
         repositoryCache[repository.path] = newCacheEntry
         
-        // 5. Reset UI state
-        self.selectedFunctionItem = .fixedOption(.defaultHistory)
         self.expandedSections = []
-//        self.expandedSections = [.localBranches, .remoteBranches] // Expand both by default
+        self.selectedFunctionItem = .fixedOption(.defaultHistory)
         isLoading = false
     }
 

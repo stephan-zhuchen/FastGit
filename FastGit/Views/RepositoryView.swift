@@ -6,48 +6,69 @@
 //
 
 import SwiftUI
+import AppKit
 
 /// 仓库视图 - 实现三区域布局
 struct RepositoryView: View {
+    @AppStorage("sidebarWidth") private var sidebarWidth: Double = 280
+    
     @ObservedObject var viewModel: MainViewModel
     let repository: GitRepository
     let onClose: ((GitRepository) -> Void)?
-
-    // ** ADDED: State for resizable sidebar **
-    // ** 新增：用于可变侧边栏的状态 **
-    @AppStorage("sidebarWidth") private var sidebarWidth: Double = 250.0
-    private let minSidebarWidth: Double = 200
-    private let maxSidebarWidth: Double = 500
+    
+    // ** ADDED: Callback for opening a submodule **
+    // ** 新增：用于打开子模块的回调 **
+    let onOpenSubmodule: ((URL) -> Void)?
 
     init(
         viewModel: MainViewModel,
         repository: GitRepository,
-        onClose: ((GitRepository) -> Void)? = nil
+        onClose: ((GitRepository) -> Void)? = nil,
+        onOpenSubmodule: ((URL) -> Void)? = nil // Add the new parameter with a default value
     ) {
         self.viewModel = viewModel
         self.repository = repository
         self.onClose = onClose
+        self.onOpenSubmodule = onOpenSubmodule
     }
     
     var body: some View {
         HStack(spacing: 0) {
-            // ** MODIFIED: Apply resizable width **
-            // ** 修改：应用可变的宽度 **
             FunctionListView(
                 selectedItem: $viewModel.selectedFunctionItem,
                 expandedSections: $viewModel.expandedSections,
                 repository: repository,
                 branches: viewModel.branches,
                 tags: viewModel.tags,
-                submodules: viewModel.submodules
+                submodules: viewModel.submodules,
+                // ** FIX: Pass the submodule opening logic to the FunctionListView **
+                // ** 修复：将打开子模块的逻辑传递给 FunctionListView **
+                onOpenSubmodule: { submodulePath in
+                    // Construct the full path of the submodule from the parent repository's path.
+                    // 从父仓库的路径构造出子模块的完整路径。
+                    let parentPath = repository.path
+                    let fullSubmoduleURL = URL(fileURLWithPath: parentPath).appendingPathComponent(submodulePath)
+                    
+                    // Call the callback to notify the main view to open a new tab.
+                    // 调用回调，通知主视图打开新标签页。
+                    onOpenSubmodule?(fullSubmoduleURL)
+                }
             )
             .frame(width: sidebarWidth)
             
-            // ** ADDED: Draggable divider **
-            // ** 新增：可拖动的分隔线 **
-            DraggableDivider(width: $sidebarWidth, minWidth: minSidebarWidth, maxWidth: maxSidebarWidth)
-            
-            // 右侧内容区域
+            // ** FIX: Moved gesture logic here for robustness **
+            // ** 修复：将手势逻辑移至此处以增强健壮性 **
+            DraggableDivider()
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            let newWidth = value.location.x
+                            let minWidth: Double = 200
+                            let maxWidth: Double = 500
+                            self.sidebarWidth = max(minWidth, min(newWidth, maxWidth))
+                        }
+                )
+
             VStack(spacing: 0) {
                 RepositoryToolbarView(onClose: nil)
                     .padding(.horizontal, 16)
@@ -69,25 +90,16 @@ struct RepositoryView: View {
         }
         .navigationTitle(repository.displayName)
         .navigationSubtitle(repository.path)
-        // ** MODIFICATION: Use .task(id:) to trigger loading only when the repo changes **
-        // ** 修改：使用 .task(id:) 来确保只在仓库变化时触发加载 **
         .task(id: repository.path) {
-            // ** FIX: Explicitly capture viewModel to help the compiler **
-            // ** 修复：显式捕获 viewModel 以帮助编译器 **
-            let vm = viewModel
-            await vm.loadRepositoryData(for: repository)
+             await viewModel.loadRepositoryData(for: repository)
         }
     }
     
-    // ... (The rest of the file remains the same)
-    // ... (文件的其余部分保持不变)
+    // ... (contentView and other subviews remain the same)
+    // ... (contentView 和其他子视图保持不变)
     
-    // MARK: - 子视图
-    
-    /// 根据选中的功能项返回对应的内容视图
     @ViewBuilder
     private func contentView(for item: SelectedFunctionItem) -> some View {
-        // 所有逻辑现在都从ViewModel读取数据
         switch item {
         case .fixedOption(let option):
             switch option {
@@ -100,18 +112,9 @@ struct RepositoryView: View {
             }
             
         case .expandableType(let type):
-            // This case might not be strictly necessary if a default branch is always selected,
-            // but it's good for handling the state where a category is selected but no specific item.
-            // 如果总是默认选中一个分支，这个 case 可能不是必需的，但它可以处理只选中了分类但未选中具体项的状态。
             switch type {
-            case .localBranches:
-                if viewModel.branches.filter({ !$0.isRemote }).isEmpty {
-                    emptyStateView(for: "本地分支", icon: "point.3.connected.trianglepath.dotted")
-                } else {
-                    HistoryView(repository: repository) // Default to showing history for the current branch
-                }
-            case .remoteBranches:
-                 HistoryView(repository: repository) // Default to showing history for the current branch
+            case .localBranches, .remoteBranches:
+                 HistoryView(repository: repository)
             case .tags:
                 if viewModel.tags.isEmpty {
                     emptyStateView(for: "标签", icon: "tag")
@@ -119,11 +122,9 @@ struct RepositoryView: View {
                     tagListView()
                 }
             case .submodules:
-                placeholderView(for: "子模块", icon: "square.stack.3d.down.right", color: .purple)
+                 HistoryView(repository: repository)
             }
             
-        // ** FIX: Updated case to handle the new branchItem definition **
-        // ** 修复：更新 case 以处理新的 branchItem 定义 **
         case .branchItem(let branchFullName):
             if let branch = viewModel.branches.first(where: { $0.name == branchFullName }) {
                 branchDetailView(branch: branch)
@@ -141,11 +142,11 @@ struct RepositoryView: View {
             }
             
         case .submoduleItem(let submoduleName):
-            placeholderView(for: "子模块: \(submoduleName)", icon: "cube", color: .purple)
+            // When a submodule is single-clicked, just show the main history
+            // 当子模块被单击时，仅显示主历史记录
+            HistoryView(repository: repository)
         }
     }
-    
-    // MARK: - 子视图方法
     
     private var defaultContentView: some View {
         VStack(spacing: 20) {
@@ -185,7 +186,7 @@ struct RepositoryView: View {
     
     private func emptyStateView(for title: String, icon: String) -> some View {
         VStack(spacing: 16) {
-            Image(systemName: icon)
+            Image(systemName: "icon")
                 .font(.system(size: 32))
                 .foregroundStyle(.tertiary)
             Text("暂无\(title)")
@@ -293,22 +294,15 @@ struct RepositoryView: View {
     }
 }
 
-// MARK: - Draggable Divider
 
-/// A view that acts as a draggable divider to resize the sidebar.
-/// 一个可拖动的分隔线视图，用于调整侧边栏大小。
+// ** FIX: Simplified DraggableDivider **
+// ** 修复：简化 DraggableDivider **
 private struct DraggableDivider: View {
-    @Binding var width: Double
-    let minWidth: Double
-    let maxWidth: Double
-
-    @State private var dragOffset: CGFloat = 0
-
     var body: some View {
-        Divider()
-            .frame(width: 8)
-            .background(Color.black.opacity(0.001)) // Make a wider hit area
-            .contentShape(Rectangle())
+        Rectangle()
+            .fill(Color(nsColor: .separatorColor))
+            .frame(width: 1)
+            .contentShape(Rectangle().inset(by: -5)) // Make the draggable area larger
             .onHover { inside in
                 if inside {
                     NSCursor.resizeLeftRight.push()
@@ -316,22 +310,12 @@ private struct DraggableDivider: View {
                     NSCursor.pop()
                 }
             }
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { value in
-                        let newWidth = width + value.translation.width - dragOffset
-                        self.width = max(minWidth, min(newWidth, maxWidth))
-                        // We don't update dragOffset here to make dragging smoother
-                    }
-                    .onEnded { _ in
-                        dragOffset = 0 // Reset on end
-                    }
-            )
     }
 }
 
-// MARK: - List Item Components
 
+// ... (TagRowView remains the same)
+// ... (TagRowView 保持不变)
 private struct TagRowView: View {
     let tag: GitTag
     let isSelected: Bool

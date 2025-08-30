@@ -84,6 +84,10 @@ struct FunctionListView: View {
     let tags: [GitTag]
     let submodules: [String]
     
+    // Callback for submodule double-click
+    // 子模块双击的回调
+    let onOpenSubmodule: ((String) -> Void)?
+    
     // State for the branch trees
     @State private var localBranchTree: [BranchTreeNode] = []
     @State private var remoteBranchTree: [BranchTreeNode] = []
@@ -203,7 +207,21 @@ struct FunctionListView: View {
                     itemCount: submodules.count,
                     onToggleExpansion: { toggleSection(.submodules) }
                 ) {
-                    // Placeholder
+                    // ** ADDED: Submodule list implementation **
+                    // ** 新增：子模块列表实现 **
+                    ScrollView {
+                        VStack(spacing: 2) {
+                            ForEach(submodules, id: \.self) { submoduleName in
+                                SubmoduleItemButton(
+                                    submoduleName: submoduleName,
+                                    onDoubleTap: {
+                                        onOpenSubmodule?(submoduleName)
+                                    }
+                                )
+                            }
+                        }
+                    }
+                    .frame(maxHeight: 200)
                 }
                 
                 // This Spacer pushes everything up
@@ -249,9 +267,15 @@ private struct ExpandableFunctionSection<Content: View>: View {
                     Image(systemName: type.iconName).font(.system(size: 16, weight: .medium)).foregroundStyle(type.themeColor).frame(width: 20)
                     Text(type.rawValue).font(.system(size: 14, weight: .medium)).foregroundStyle(.primary)
                     Spacer()
-                    if itemCount > 0 {
-                        Text("\(itemCount)").font(.caption).foregroundStyle(.secondary).padding(.horizontal, 6).padding(.vertical, 2).background(Color.secondary.opacity(0.2)).clipShape(Capsule())
-                    }
+                    // ** FIX: Always show the count, even if it's 0 **
+                    // ** 修复：总是显示数量，即使是 0 **
+                    Text("\(itemCount)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.secondary.opacity(0.2))
+                        .clipShape(Capsule())
                 }
                 .padding(.horizontal, 16).padding(.vertical, 8)
                 .background(isHovered ? Color.primary.opacity(0.05) : Color.clear)
@@ -391,8 +415,6 @@ private struct FixedFunctionButton: View {
     }
 }
 
-// ** ADDED: A simple button for tag items **
-// ** 新增：用于标签项的简单按钮 **
 private struct TagItemButton: View {
     let tag: GitTag
     let isSelected: Bool
@@ -435,6 +457,46 @@ private struct TagItemButton: View {
     }
 }
 
+// ** ADDED: A button for submodule items with double-click action **
+// ** 新增：一个带有双击操作的子模块项按钮 **
+private struct SubmoduleItemButton: View {
+    let submoduleName: String
+    let onDoubleTap: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Spacer().frame(width: 8)
+            Image(systemName: "cube.box")
+                .font(.system(size: 12))
+                .foregroundStyle(Color.purple)
+                .frame(width: 16, alignment: .center)
+
+            Text(submoduleName)
+                .font(.system(size: 13))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+            
+            Spacer()
+        }
+        .padding(.leading, 20)
+        .padding(.vertical, 4)
+        .padding(.trailing, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(isHovered ? Color.primary.opacity(0.05) : Color.clear)
+        )
+        .padding(.horizontal, 8)
+        .onHover { hovering in
+            isHovered = hovering
+        }
+        .onTapGesture(count: 2) {
+            onDoubleTap()
+        }
+    }
+}
+
 
 // MARK: - Preview
 #if DEBUG
@@ -443,7 +505,7 @@ struct FunctionListView_Previews: PreviewProvider {
     // 一个有状态的容器，使预览可交互
     struct PreviewWrapper: View {
         @State private var selectedItem: SelectedFunctionItem? = .branchItem("main")
-        @State private var expandedSections: Set<ExpandableFunctionType> = [.localBranches, .remoteBranches, .tags]
+        @State private var expandedSections: Set<ExpandableFunctionType> = [.localBranches, .remoteBranches, .tags, .submodules]
 
         // Mock data for preview
         // 用于预览的模拟数据
@@ -460,6 +522,12 @@ struct FunctionListView_Previews: PreviewProvider {
         private let mockTags: [GitTag] = (1...20).map { i in
             GitTag(name: "v1.0.\(i)", targetSha: "sha-\(i)")
         }
+        
+        private let mockSubmodules: [String] = [
+            "External/SwiftGitX",
+            "Libraries/Networking",
+            "Frameworks/UIComponents"
+        ]
 
         var body: some View {
             FunctionListView(
@@ -468,7 +536,10 @@ struct FunctionListView_Previews: PreviewProvider {
                 repository: nil,
                 branches: mockBranches,
                 tags: mockTags,
-                submodules: []
+                submodules: mockSubmodules,
+                onOpenSubmodule: { submoduleName in
+                    print("ACTION: Double-clicked to open submodule: \(submoduleName)")
+                }
             )
         }
     }

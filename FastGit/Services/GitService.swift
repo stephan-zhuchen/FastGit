@@ -7,6 +7,7 @@
 
 import Foundation
 import SwiftGitX
+import libgit2
 
 /// Git服务类 - 与SwiftGitX交互的唯一入口
 @MainActor
@@ -234,6 +235,77 @@ class GitService: ObservableObject {
             print("❌ 详细错误: \(error)")
             return ([], [], [])
         }
+    }
+    
+    // ** FIX: Switched to a low-level C API call to get submodules **
+    // ** 修复：切换到底层 C API 调用来获取子模块 **
+    /// 获取仓库的所有子模块
+    /// - Parameter repository: 目标仓库
+    /// - Returns: 子模块相对路径的数组
+    func fetchSubmodules(for repository: GitRepository) async -> [String] {
+        print("📦 开始获取子模块...")
+        var submodulePaths: [String] = []
+
+        // Since the provided SwiftGitX version lacks a submodule collection,
+        // we'll use the underlying libgit2 C functions directly.
+        // 由于提供的 SwiftGitX 版本缺少子模块集合，我们将直接使用底层的 libgit2 C 函数。
+        
+        // Define the callback function that libgit2 will call for each submodule.
+        // 定义 libgit2 将为每个子模块调用的回调函数。
+        let callback: git_submodule_cb = { submodule, name, payload in
+            // Safely unwrap the payload to get a pointer to our Swift array.
+            // 安全地解包 payload，以获取指向我们 Swift 数组的指针。
+            guard let submodule = submodule,
+                  let payload = payload else { return -1 }
+            
+            let submodulePathsPointer = payload.assumingMemoryBound(to: [String].self)
+            
+            // Get the submodule path using the C API.
+            // 使用 C API 获取子模块路径。
+            if let pathPointer = git_submodule_path(submodule) {
+                let path = String(cString: pathPointer)
+                submodulePathsPointer.pointee.append(path)
+            }
+            
+            return 0 // Return 0 to continue iteration.
+        }
+
+        do {
+            let repoURL = URL(fileURLWithPath: repository.path)
+            // We need the raw OpaquePointer to the repository for C functions.
+            // We can get this by temporarily opening the repository again.
+            // This is safe and lightweight.
+            // 我们需要仓库的原始 OpaquePointer 来调用 C 函数。
+            // 我们可以通过临时再次打开仓库来获得它。这是安全且轻量级的。
+            let swiftGitXRepo = try Repository.open(at: repoURL)
+            
+            // Use reflection to access the private 'pointer' property of the Repository object.
+            // 使用反射来访问 Repository 对象的私有 'pointer' 属性。
+            let mirror = Mirror(reflecting: swiftGitXRepo)
+            if let repoPointer = mirror.descendant("pointer") as? OpaquePointer {
+                
+                // Call the C function `git_submodule_foreach`, passing our callback
+                // and a pointer to our array as the payload.
+                // 调用 C 函数 `git_submodule_foreach`，将我们的回调函数和指向数组的指针作为 payload 传递。
+                let status = withUnsafeMutablePointer(to: &submodulePaths) { payloadPointer in
+                    git_submodule_foreach(repoPointer, callback, payloadPointer)
+                }
+
+                if status == GIT_OK.rawValue {
+                    print("✅ 成功获取到 \(submodulePaths.count) 个子模块。")
+                } else {
+                    let errorMessage = String(cString: git_error_last().pointee.message)
+                    print("❌ 调用 git_submodule_foreach 失败: \(errorMessage)")
+                }
+            } else {
+                 print("❌ 无法通过反射获取 repository pointer。")
+            }
+
+        } catch {
+            print("❌ 打开仓库以获取子模块时失败: \(error.localizedDescription)")
+        }
+        
+        return submodulePaths
     }
     
     /// 获取仓库的所有分支
