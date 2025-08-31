@@ -230,11 +230,10 @@ class MainViewModel: ObservableObject {
     func performPull(for repository: GitRepository) {
         guard let options = pullOptions else { return }
         print("Performing pull with options: \(options)")
-        // TODO: 调用 GitService 执行实际的 pull 操作
         
         Task {
             isPerformingToolbarAction = true
-            await Task.sleep(1_000_000_000)
+            await gitService.pull(with: options, in: repository)
             await self.refreshData(for: repository)
             isPerformingToolbarAction = false
         }
@@ -292,4 +291,3 @@ class MainViewModel: ObservableObject {
         self.submodules = cache.submodules
     }
 }
-

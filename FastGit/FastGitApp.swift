@@ -13,5 +13,8 @@ struct FastGitApp: App {
         WindowGroup {
             ContentView()
         }
+        Settings {
+            SettingsView()
+        }
     }
 }

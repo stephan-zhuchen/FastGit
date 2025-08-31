@@ -43,6 +43,30 @@ struct ContentView: View {
                             await openNewRepository(at: url)
                         }
                     )
+                    // 在欢迎页面的右下角添加一个设置按钮
+                    .overlay(alignment: .bottomTrailing) {
+                        // 使用 SettingsLink 来确保能正确打开设置窗口
+                        if #available(macOS 14.0, *) {
+                            SettingsLink {
+                                Image(systemName: "gear")
+                                    .font(.title2)
+                                    .padding()
+                            }
+                            .buttonStyle(.plain)
+                            .padding()
+                        } else {
+                            // Fallback for older macOS versions
+                            Button(action: {
+                                NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+                            }) {
+                                Image(systemName: "gear")
+                                    .font(.title2)
+                                    .padding()
+                            }
+                            .buttonStyle(.plain)
+                            .padding()
+                        }
+                    }
                 } else if let repository = repositoryForTabId(selectedTab) {
                     // ** FIX: Pass the onOpenSubmodule callback to RepositoryView **
                     // ** 修复：将 onOpenSubmodule 回调传递给 RepositoryView **
@@ -188,3 +212,4 @@ struct ContentView: View {
 #Preview {
     ContentView()
 }
+

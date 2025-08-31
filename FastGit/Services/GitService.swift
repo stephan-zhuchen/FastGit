@@ -62,7 +62,6 @@ fileprivate extension Repository {
                 var fetchOptions = git_fetch_options()
                 git_fetch_options_init(&fetchOptions, UInt32(GIT_FETCH_OPTIONS_VERSION))
                 
-                // --- 修复点: 使用正确的 libgit2 枚举值 ---
                 fetchOptions.prune = options.prune ? GIT_FETCH_PRUNE : GIT_FETCH_PRUNE_UNSPECIFIED
                 fetchOptions.download_tags = options.fetchAllTags ? GIT_REMOTE_DOWNLOAD_TAGS_ALL : GIT_REMOTE_DOWNLOAD_TAGS_AUTO
 
@@ -79,6 +78,136 @@ fileprivate extension Repository {
                 continuation.resume(throwing: error)
             }
         }
+    }
+
+    func pull(options: PullOptions) async throws {
+        let mirror = Mirror(reflecting: self)
+        guard let repoPointer = mirror.descendant("pointer") as? OpaquePointer else {
+            throw GitServiceError.operationFailed("Could not get repository pointer.")
+        }
+        
+        // 在执行操作前，确保仓库有可用的签名
+        try self.ensureRepositorySignature()
+
+        // 1. Handle uncommitted changes (Stash)
+        var stashed = false
+        if options.uncommittedChangesOption == .stash {
+            let status = try self.status()
+            if !status.isEmpty {
+                _ = try self.stash.save(message: "Auto-stash before pull")
+                stashed = true
+                print("🗄️ Stashed changes before pull.")
+            }
+        }
+        
+        do {
+            // 2. Fetch
+            guard let remote = self.remote[options.selectedRemote] else {
+                throw RepositoryError.failedToFetch("Remote '\(options.selectedRemote)' not found.")
+            }
+            print("⬇️ Fetching from remote '\(remote.name)'...")
+            let fetchOptionsVal = FetchOptions(remote: options.selectedRemote, prune: true, fetchAllTags: true)
+            try await self.fetch(remote: remote, options: fetchOptionsVal)
+            
+            // 3. Merge Analysis and Fast-Forward
+            var fetchHeadOid = git_oid()
+            let fetchHeadStatus = git_repository_fetchhead_foreach(repoPointer, { (_, _, oid, _, payload) -> Int32 in
+                if let oid = oid {
+                    git_oid_cpy(payload?.assumingMemoryBound(to: git_oid.self), oid)
+                    return -1 // Stop iteration after finding the first one
+                }
+                return 0
+            }, &fetchHeadOid)
+
+            guard fetchHeadStatus == GIT_ITEROVER.rawValue else {
+                 throw GitServiceError.operationFailed("Could not find FETCH_HEAD. The remote branch may be empty or you are already up-to-date.")
+            }
+
+            var annotatedCommit: OpaquePointer?
+            defer { git_annotated_commit_free(annotatedCommit) }
+            let annotatedLookupStatus = git_annotated_commit_lookup(&annotatedCommit, repoPointer, &fetchHeadOid)
+            guard annotatedLookupStatus == GIT_OK.rawValue, annotatedCommit != nil else {
+                 throw GitServiceError.operationFailed("Could not look up fetched commit.")
+            }
+
+            var analysis: git_merge_analysis_t = GIT_MERGE_ANALYSIS_NONE
+            var preference: git_merge_preference_t = GIT_MERGE_PREFERENCE_NONE
+            
+            var theirHeads: [OpaquePointer?] = [annotatedCommit]
+            
+            let analysisStatus = git_merge_analysis(&analysis, &preference, repoPointer, &theirHeads, 1)
+            guard analysisStatus == GIT_OK.rawValue else {
+                throw GitServiceError.operationFailed("Merge analysis failed.")
+            }
+
+            if (analysis.rawValue & GIT_MERGE_ANALYSIS_UP_TO_DATE.rawValue) != 0 {
+                print("✅ Already up-to-date.")
+            } else if (analysis.rawValue & GIT_MERGE_ANALYSIS_FASTFORWARD.rawValue) != 0 || (analysis.rawValue & GIT_MERGE_ANALYSIS_UNBORN.rawValue) != 0 {
+                print("🏃 Performing fast-forward merge...")
+
+                guard let targetOid = git_annotated_commit_id(annotatedCommit) else {
+                    throw GitServiceError.operationFailed("Could not get target OID for fast-forward.")
+                }
+                
+                var localRef: OpaquePointer?
+                defer { git_reference_free(localRef) }
+                let headFullName = try self.HEAD.fullName
+                let lookupStatus = git_reference_lookup(&localRef, repoPointer, headFullName)
+                guard lookupStatus == GIT_OK.rawValue, localRef != nil else {
+                    throw GitServiceError.operationFailed("Could not lookup local branch reference: \(headFullName).")
+                }
+                
+                var newRef: OpaquePointer?
+                defer { git_reference_free(newRef) }
+                let setTargetStatus = git_reference_set_target(&newRef, localRef, targetOid, "pull: Fast-forward")
+                guard setTargetStatus == GIT_OK.rawValue else {
+                    let err = String(cString: git_error_last().pointee.message)
+                    throw GitServiceError.operationFailed("Could not set target for fast-forward merge: \(err)")
+                }
+
+                var checkoutOpts = git_checkout_options()
+                git_checkout_options_init(&checkoutOpts, UInt32(GIT_CHECKOUT_OPTIONS_VERSION))
+                checkoutOpts.checkout_strategy = GIT_CHECKOUT_FORCE.rawValue
+                let checkoutStatus = git_checkout_head(repoPointer, &checkoutOpts)
+                guard checkoutStatus == GIT_OK.rawValue else {
+                    throw GitServiceError.operationFailed("Could not checkout HEAD after fast-forward merge.")
+                }
+            } else {
+                throw GitServiceError.operationFailed("Your local branch has diverged from the remote branch. A merge or rebase is required, which is not yet fully implemented.")
+            }
+
+        } catch {
+            if stashed {
+                print(" Popping stash after failed pull...")
+                try? self.stash.pop()
+            }
+            throw error
+        }
+        
+        if stashed {
+            print(" Popping stash after successful pull...")
+            try? self.stash.pop()
+        }
+    }
+    
+    /// 确保仓库有可用的签名，如果没有，则从应用设置中注入
+    func ensureRepositorySignature() throws {
+        // 1. 检查仓库的本地配置是否已经有签名
+        if self.config.string(forKey: "user.name") != nil, self.config.string(forKey: "user.email") != nil {
+            return // 本地配置已存在，无需操作
+        }
+        
+        // 2. 如果本地没有，从 UserDefaults (应用内“全局”设置) 获取
+        guard let name = UserDefaults.standard.string(forKey: "globalUserName"), !name.isEmpty,
+              let email = UserDefaults.standard.string(forKey: "globalUserEmail"), !email.isEmpty else {
+            // 3. 如果应用内设置也没有，则抛出错误，提示用户去设置
+            throw GitServiceError.signatureNotFound
+        }
+        
+        // 4. 将应用内设置的签名写入到仓库的本地 .git/config 文件中
+        self.config.set(name, forKey: "user.name")
+        self.config.set(email, forKey: "user.email")
+        print("✍️ 已将应用内配置的签名注入到仓库本地配置中。")
     }
 }
 
@@ -579,6 +708,13 @@ class GitService: ObservableObject {
         return Array(fileItems.values).sorted { $0.path < $1.path }
     }
     
+    // MARK: - 全局 Git 配置
+    
+    /// 获取 Git 版本信息
+    func getGitVersion() -> String {
+        return SwiftGitX.libgit2Version
+    }
+
     /// 执行 fetch 操作
     func fetch(with options: FetchOptions, in repository: GitRepository) async {
         isLoading = true
@@ -612,6 +748,27 @@ class GitService: ObservableObject {
         isLoading = false
     }
 
+    /// 执行 pull 操作
+    func pull(with options: PullOptions, in repository: GitRepository) async {
+        isLoading = true
+        errorMessage = nil
+        
+        do {
+            let repoURL = URL(fileURLWithPath: repository.path)
+            let swiftGitXRepo = try Repository.open(at: repoURL)
+            
+            try await swiftGitXRepo.pull(options: options)
+
+            print("✅ Pull successful for repository \(repository.displayName)")
+        } catch {
+            let errorMsg = "Pull failed: \(error.localizedDescription)"
+            errorMessage = errorMsg
+            print("❌ \(errorMsg)")
+        }
+        
+        isLoading = false
+    }
+
     /// 创建新分支
     func createBranch(name: String, options: NewBranchOptions, in repository: GitRepository) async -> Bool {
         isLoading = true
@@ -620,6 +777,8 @@ class GitService: ObservableObject {
         do {
             let repoURL = URL(fileURLWithPath: repository.path)
             let swiftGitXRepo = try Repository.open(at: repoURL)
+            
+            try swiftGitXRepo.ensureRepositorySignature()
 
             let statusItems = try swiftGitXRepo.status()
             if !statusItems.isEmpty {
@@ -675,12 +834,14 @@ class GitService: ObservableObject {
             let repoURL = URL(fileURLWithPath: repository.path)
             let swiftGitXRepo = try Repository.open(at: repoURL)
             
+            try swiftGitXRepo.ensureRepositorySignature()
+            
             var stashFlags: StashOption = .default
             if options.includeUntracked {
                 stashFlags.insert(.includeUntracked)
             }
             
-            _ = try swiftGitXRepo.stash.save(message: options.message)
+            _ = try swiftGitXRepo.stash.save(message: options.message, options: stashFlags)
             print("✅ Stash successful")
             
         } catch {
@@ -700,6 +861,8 @@ class GitService: ObservableObject {
         do {
             let repoURL = URL(fileURLWithPath: repository.path)
             let swiftGitXRepo = try Repository.open(at: repoURL)
+            
+            try swiftGitXRepo.ensureRepositorySignature()
             
             guard let remote = swiftGitXRepo.remote[options.remote] else {
                 throw GitServiceError.operationFailed("Remote '\(options.remote)' not found.")
@@ -783,6 +946,7 @@ enum GitServiceError: LocalizedError {
     case permissionDenied(path: String)
     case initializationFailed(String)
     case operationFailed(String)
+    case signatureNotFound
     
     var errorDescription: String? {
         switch self {
@@ -796,6 +960,8 @@ enum GitServiceError: LocalizedError {
             return "初始化失败: \(message)"
         case .operationFailed(let message):
             return "操作失败: \(message)"
+        case .signatureNotFound:
+            return "Git签名未找到。请在应用的设置页面中配置您的'用户名'和'邮箱'。"
         }
     }
 }
