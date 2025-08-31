@@ -112,7 +112,6 @@ struct CommitDetailView: View {
         }
     }
     
-    // --- MODIFIED: 侧边栏布局调整 ---
     @ViewBuilder
     private func detailSidebar() -> some View {
         VStack(spacing: 8) {
@@ -130,11 +129,11 @@ struct CommitDetailView: View {
                 }
             }
             
-            Spacer() // 使用 Spacer 将按钮推到顶部
+            Spacer()
         }
         .padding(8)
-        .frame(width: 40) // 设置固定宽度
-        .frame(maxHeight: .infinity) // 让背景充满整个高度
+        .frame(width: 40)
+        .frame(maxHeight: .infinity)
         .background(.regularMaterial)
     }
     
@@ -212,10 +211,8 @@ struct FileStatusRow: View {
                 .background(file.status.displayColor)
                 .clipShape(RoundedRectangle(cornerRadius: 3))
             
-            Text(file.fileName)
-            
-            Text(file.directory)
-                .foregroundStyle(.secondary)
+            // --- 修改点: 直接显示完整路径 ---
+            Text(file.path)
                 .truncationMode(.middle)
             
             Spacer()

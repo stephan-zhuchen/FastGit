@@ -8,7 +8,8 @@
 import Foundation
 
 /// Git分支模型
-struct GitBranch: Identifiable, Equatable {
+// --- 修改点: 遵循 Hashable ---
+struct GitBranch: Identifiable, Equatable, Hashable {
     let id = UUID()
     let name: String
     let shortName: String
@@ -39,6 +40,16 @@ struct GitBranch: Identifiable, Equatable {
         } else {
             return .local
         }
+    }
+    
+    // --- 新增: 实现 Hashable 协议 ---
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(name)
+    }
+
+    // --- 新增: 实现 Equatable 协议 (确保 tag 工作正常) ---
+    static func == (lhs: GitBranch, rhs: GitBranch) -> Bool {
+        return lhs.name == rhs.name
     }
 }
 

@@ -12,6 +12,7 @@ enum GitOperation: String, CaseIterable {
     case pull = "Pull"
     case push = "Push"
     case fetch = "Fetch"
+    case newBranch = "Branch" // 新增
     case sync = "同步"
     
     /// 图标名称
@@ -23,6 +24,8 @@ enum GitOperation: String, CaseIterable {
             return "arrow.up.circle"
         case .fetch:
             return "arrow.clockwise.circle"
+        case .newBranch:
+            return "plus"
         case .sync:
             return "arrow.triangle.2.circlepath"
         }
@@ -37,6 +40,8 @@ enum GitOperation: String, CaseIterable {
             return "推送到远程仓库"
         case .fetch:
             return "获取远程更新"
+        case .newBranch:
+            return "创建新分支"
         case .sync:
             return "同步远程仓库"
         }
@@ -45,17 +50,11 @@ enum GitOperation: String, CaseIterable {
 
 /// 仓库工具栏视图
 struct RepositoryToolbarView: View {
-    let onClose: (() -> Void)?  // 关闭Tab的回调
-    @State private var isLoading = false
-    
-    // 默认初始化方法，保持向后兼容
-    init(onClose: (() -> Void)? = nil) {
-        self.onClose = onClose
-    }
+    @ObservedObject var viewModel: MainViewModel
+    let repository: GitRepository
     
     var body: some View {
         HStack(spacing: 12) {
-            // 工具栏标题
             HStack {
                 Image(systemName: "hammer")
                     .font(.system(size: 14, weight: .medium))
@@ -67,36 +66,15 @@ struct RepositoryToolbarView: View {
             
             Spacer()
             
-            // Git操作按钮组
             HStack(spacing: 8) {
                 ForEach(GitOperation.allCases, id: \.self) { operation in
                     ToolbarButton(
                         operation: operation,
-                        isLoading: isLoading,
+                        isLoading: viewModel.isPerformingToolbarAction,
                         action: {
-                            performGitOperation(operation)
+                            viewModel.handleToolbarAction(operation, for: repository)
                         }
                     )
-                }
-                
-                // 分隔线
-                if onClose != nil {
-                    Divider()
-                        .frame(height: 16)
-                    
-                    // 关闭Tab按钮
-                    Button(action: {
-                        onClose?()
-                    }) {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 12, weight: .medium))
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
-                    .help("关闭当前Tab")
-                    .onHover { hovering in
-                        // 可以添加悬停效果
-                    }
                 }
             }
         }
@@ -104,27 +82,6 @@ struct RepositoryToolbarView: View {
         .padding(.vertical, 10)
         .background(.regularMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 8))
-    }
-    
-    // MARK: - 私有方法
-    
-    /// 执行Git操作
-    /// - Parameter operation: 要执行的操作
-    private func performGitOperation(_ operation: GitOperation) {
-        // 这是一个预留功能
-        print("⚠️ \(operation.rawValue)功能暂未实现")
-        
-        // 模拟操作执行
-        withAnimation {
-            isLoading = true
-        }
-        
-        // TODO: 实现具体的Git操作
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            withAnimation {
-                isLoading = false
-            }
-        }
     }
 }
 
@@ -163,7 +120,8 @@ private struct ToolbarButton: View {
             )
         }
         .buttonStyle(.plain)
-        .disabled(isLoading)
+        .disabled(operation == .push || isLoading)
+        .opacity(operation == .push ? 0.5 : 1.0)
         .help(operation.tooltip)
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.2)) {
@@ -173,7 +131,3 @@ private struct ToolbarButton: View {
     }
 }
 
-#Preview {
-    RepositoryToolbarView()
-        .padding()
-}

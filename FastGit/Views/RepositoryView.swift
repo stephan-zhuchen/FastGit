@@ -16,15 +16,13 @@ struct RepositoryView: View {
     let repository: GitRepository
     let onClose: ((GitRepository) -> Void)?
     
-    // ** ADDED: Callback for opening a submodule **
-    // ** 新增：用于打开子模块的回调 **
     let onOpenSubmodule: ((URL) -> Void)?
 
     init(
         viewModel: MainViewModel,
         repository: GitRepository,
         onClose: ((GitRepository) -> Void)? = nil,
-        onOpenSubmodule: ((URL) -> Void)? = nil // Add the new parameter with a default value
+        onOpenSubmodule: ((URL) -> Void)? = nil
     ) {
         self.viewModel = viewModel
         self.repository = repository
@@ -41,23 +39,14 @@ struct RepositoryView: View {
                 branches: viewModel.branches,
                 tags: viewModel.tags,
                 submodules: viewModel.submodules,
-                // ** FIX: Pass the submodule opening logic to the FunctionListView **
-                // ** 修复：将打开子模块的逻辑传递给 FunctionListView **
                 onOpenSubmodule: { submodulePath in
-                    // Construct the full path of the submodule from the parent repository's path.
-                    // 从父仓库的路径构造出子模块的完整路径。
                     let parentPath = repository.path
                     let fullSubmoduleURL = URL(fileURLWithPath: parentPath).appendingPathComponent(submodulePath)
-                    
-                    // Call the callback to notify the main view to open a new tab.
-                    // 调用回调，通知主视图打开新标签页。
                     onOpenSubmodule?(fullSubmoduleURL)
                 }
             )
             .frame(width: sidebarWidth)
             
-            // ** FIX: Moved gesture logic here for robustness **
-            // ** 修复：将手势逻辑移至此处以增强健壮性 **
             DraggableDivider()
                 .gesture(
                     DragGesture(minimumDistance: 0)
@@ -69,24 +58,21 @@ struct RepositoryView: View {
                         }
                 )
 
-            // --- MODIFIED: Conditionally show Toolbar ---
-            // --- 修改：条件性显示工具栏 ---
-            if viewModel.selectedFunctionItem != .fixedOption(.localChanges) {
-                VStack(spacing: 0) {
-                    RepositoryToolbarView(onClose: nil)
+            VStack(spacing: 0) {
+                if viewModel.selectedFunctionItem != .fixedOption(.localChanges) {
+                    RepositoryToolbarView(viewModel: viewModel, repository: repository)
                         .padding(.horizontal, 16)
                         .padding(.top, 16)
-                    
-                    Divider()
-                        .padding(.horizontal, 16)
-                    
-                    mainContentArea
                 }
-            } else {
-                // For LocalChangesView, don't show the toolbar.
-                // 对于“本地修改”视图，不显示工具栏。
-                contentView(for: .fixedOption(.localChanges))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                
+                Group {
+                    if let item = viewModel.selectedFunctionItem {
+                        contentView(for: item)
+                    } else {
+                        defaultContentView
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
         }
         .navigationTitle(repository.displayName)
@@ -94,22 +80,19 @@ struct RepositoryView: View {
         .task(id: repository.path) {
              await viewModel.loadRepositoryData(for: repository)
         }
+        .sheet(isPresented: $viewModel.showingNewBranchSheet) {
+            NewBranchView(
+                options: $viewModel.newBranchOptions,
+                allBranches: viewModel.branches,
+                hasUncommittedChanges: viewModel.hasUncommittedChanges,
+                onConfirm: {
+                    viewModel.createNewBranch(for: repository)
+                },
+                onCancel: {}
+            )
+        }
     }
     
-    /// The main content area that shows different views based on selection.
-    /// 根据选择显示不同视图的主内容区域。
-    private var mainContentArea: some View {
-        Group {
-            if let item = viewModel.selectedFunctionItem {
-                contentView(for: item)
-            } else {
-                defaultContentView
-            }
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    }
-
     @ViewBuilder
     private func contentView(for item: SelectedFunctionItem) -> some View {
         switch item {
@@ -117,16 +100,19 @@ struct RepositoryView: View {
             switch option {
             case .defaultHistory:
                 HistoryView(repository: repository)
+                    .padding(16)
             case .localChanges:
                 LocalChangesView(repository: repository)
             case .stashList:
                 placeholderView(for: "Stash列表", icon: "tray.full", color: .purple)
+                    .padding(16)
             }
             
         case .expandableType(let type):
             switch type {
             case .localBranches, .remoteBranches:
                  HistoryView(repository: repository)
+                    .padding(16)
             case .tags:
                 if viewModel.tags.isEmpty {
                     emptyStateView(for: "标签", icon: "tag")
@@ -135,6 +121,7 @@ struct RepositoryView: View {
                 }
             case .submodules:
                  HistoryView(repository: repository)
+                    .padding(16)
             }
             
         case .branchItem(let branchFullName):
@@ -154,9 +141,8 @@ struct RepositoryView: View {
             }
             
         case .submoduleItem(let submoduleName):
-            // When a submodule is single-clicked, just show the main history
-            // 当子模块被单击时，仅显示主历史记录
             HistoryView(repository: repository)
+                .padding(16)
         }
     }
     
@@ -236,6 +222,7 @@ struct RepositoryView: View {
             }
             Spacer()
         }
+        .padding(16)
     }
     
     private func branchDetailView(branch: GitBranch) -> some View {
@@ -271,6 +258,7 @@ struct RepositoryView: View {
             }
             HistoryView(repository: repository, startingSha: branch.targetSha)
         }
+        .padding(16)
     }
     
     private func tagDetailView(tag: GitTag) -> some View {
@@ -303,18 +291,17 @@ struct RepositoryView: View {
             }
             HistoryView(repository: repository, startingSha: tag.targetSha)
         }
+        .padding(16)
     }
 }
 
 
-// ** FIX: Simplified DraggableDivider **
-// ** 修复：简化 DraggableDivider **
 private struct DraggableDivider: View {
     var body: some View {
         Rectangle()
             .fill(Color(nsColor: .separatorColor))
             .frame(width: 1)
-            .contentShape(Rectangle().inset(by: -5)) // Make the draggable area larger
+            .contentShape(Rectangle().inset(by: -5))
             .onHover { inside in
                 if inside {
                     NSCursor.resizeLeftRight.push()
@@ -326,8 +313,6 @@ private struct DraggableDivider: View {
 }
 
 
-// ... (TagRowView remains the same)
-// ... (TagRowView 保持不变)
 private struct TagRowView: View {
     let tag: GitTag
     let isSelected: Bool

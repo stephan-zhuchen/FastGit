@@ -450,7 +450,6 @@ class GitService: ObservableObject {
             let repoURL = URL(fileURLWithPath: repository.path)
             let swiftGitXRepo = try Repository.open(at: repoURL)
 
-            // --- 修改点: 增加 .includeIgnored 选项 ---
             let statusOptions: StatusOption = [.includeUntracked, .includeIgnored]
             let statusEntries = try swiftGitXRepo.status(options: statusOptions)
             
@@ -505,6 +504,98 @@ class GitService: ObservableObject {
         
         return Array(fileItems.values).sorted { $0.path < $1.path }
     }
+    
+    /// 执行 fetch 操作
+    /// - Parameter repository: 目标仓库
+    func fetch(for repository: GitRepository) async {
+        isLoading = true
+        errorMessage = nil
+        
+        do {
+            let repoURL = URL(fileURLWithPath: repository.path)
+            let swiftGitXRepo = try Repository.open(at: repoURL)
+            
+            if let origin = swiftGitXRepo.remote["origin"] {
+                try await swiftGitXRepo.fetch(remote: origin)
+                print("✅ Fetch successful for \(repository.displayName)")
+            } else {
+                throw GitServiceError.operationFailed("Remote 'origin' not found.")
+            }
+            
+        } catch {
+            let errorMsg = "Fetch failed: \(error.localizedDescription)"
+            errorMessage = errorMsg
+            print("❌ \(errorMsg)")
+        }
+        
+        isLoading = false
+    }
+
+    /// 创建新分支
+    /// - Parameters:
+    ///   - name: 新分支的名称
+    ///   - options: 创建分支的选项
+    ///   - repository: 目标仓库
+    /// - Returns: 是否创建成功
+    func createBranch(name: String, options: NewBranchOptions, in repository: GitRepository) async -> Bool {
+        isLoading = true
+        errorMessage = nil
+        
+        do {
+            let repoURL = URL(fileURLWithPath: repository.path)
+            let swiftGitXRepo = try Repository.open(at: repoURL)
+
+            // 1. 处理未提交的变更
+            let statusItems = try swiftGitXRepo.status()
+            if !statusItems.isEmpty {
+                switch options.uncommittedChangesOption {
+                case .stash:
+                    _ = try swiftGitXRepo.stash.save(message: "Stash for creating branch \(name)")
+                    print("✅ Stashed uncommitted changes.")
+                case .discard:
+                    guard let headCommit = try swiftGitXRepo.HEAD.target as? Commit else {
+                        throw GitServiceError.operationFailed("Could not get HEAD commit to discard changes.")
+                    }
+                    try swiftGitXRepo.reset(to: headCommit, mode: .hard)
+                    print("✅ Discarded uncommitted changes.")
+                }
+            }
+            
+            // 2. 找到基准 commit
+            guard let baseBranchSha = options.baseBranch.targetSha,
+                  let baseCommitOid = try? OID(hex: baseBranchSha) else {
+                throw GitServiceError.operationFailed("Base branch has no valid target SHA.")
+            }
+            let baseCommit: Commit = try swiftGitXRepo.show(id: baseCommitOid)
+
+            // 3. 创建新分支
+            let newBranch = try swiftGitXRepo.branch.create(
+                named: name,
+                target: baseCommit,
+                force: options.allowOverwrite
+            )
+            print("✅ Successfully created branch '\(name)'")
+            
+            // 4. 如果需要，切换到新分支
+            if options.checkoutAfterCreation {
+                try swiftGitXRepo.switch(to: newBranch)
+                print("✅ Switched to new branch '\(name)'")
+            }
+
+            // TODO: Stash pop logic
+            // TODO: Submodule update logic
+
+            isLoading = false
+            return true
+            
+        } catch {
+            let errorMsg = "Failed to create branch: \(error.localizedDescription)"
+            errorMessage = errorMsg
+            print("❌ \(errorMsg)")
+            isLoading = false
+            return false
+        }
+    }
 
     private func calculateLineChanges(for path: String?, in patchMap: [String: Patch]) -> (added: Int, deleted: Int) {
         guard let path = path, let patch = patchMap[path] else {
@@ -526,7 +617,6 @@ class GitService: ObservableObject {
         return (linesAdded, linesDeleted)
     }
     
-    // --- 修改点: 增加对 .ignored 和 .conflicted 的处理 ---
     private func convertStatus(from deltaType: Diff.DeltaType) -> GitFileStatusType {
         switch deltaType {
         case .added: return .added
