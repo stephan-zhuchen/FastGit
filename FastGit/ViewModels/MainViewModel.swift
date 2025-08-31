@@ -162,12 +162,6 @@ class MainViewModel: ObservableObject {
     func handleToolbarAction(_ operation: GitOperation, for repository: GitRepository) {
         Task {
             switch operation {
-            case .sync: // Sync performs fetch for now
-                isPerformingToolbarAction = true
-                await gitService.fetch(with: FetchOptions(), in: repository) // Sync uses default fetch
-                await self.refreshData(for: repository)
-                isPerformingToolbarAction = false
-                
             case .fetch:
                 self.fetchOptions = FetchOptions()
                 self.showingFetchSheet = true

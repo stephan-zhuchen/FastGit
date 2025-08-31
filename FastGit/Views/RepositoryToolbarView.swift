@@ -14,7 +14,6 @@ enum GitOperation: String, CaseIterable {
     case fetch = "Fetch"
     case newBranch = "Branch"
     case stash = "Stash"
-    case sync = "同步"
     
     /// 图标名称
     var iconName: String {
@@ -29,8 +28,6 @@ enum GitOperation: String, CaseIterable {
             return "plus"
         case .stash:
             return "archivebox"
-        case .sync:
-            return "arrow.triangle.2.circlepath"
         }
     }
     
@@ -47,8 +44,6 @@ enum GitOperation: String, CaseIterable {
             return "创建新分支"
         case .stash:
             return "贮藏本地变更"
-        case .sync:
-            return "同步远程仓库"
         }
     }
 }
