@@ -69,23 +69,24 @@ struct RepositoryView: View {
                         }
                 )
 
-            VStack(spacing: 0) {
-                RepositoryToolbarView(onClose: nil)
-                    .padding(.horizontal, 16)
-                    .padding(.top, 16)
-                
-                Divider()
-                    .padding(.horizontal, 16)
-                
-                Group {
-                    if let item = viewModel.selectedFunctionItem {
-                        contentView(for: item)
-                    } else {
-                        defaultContentView
-                    }
+            // --- MODIFIED: Conditionally show Toolbar ---
+            // --- 修改：条件性显示工具栏 ---
+            if viewModel.selectedFunctionItem != .fixedOption(.localChanges) {
+                VStack(spacing: 0) {
+                    RepositoryToolbarView(onClose: nil)
+                        .padding(.horizontal, 16)
+                        .padding(.top, 16)
+                    
+                    Divider()
+                        .padding(.horizontal, 16)
+                    
+                    mainContentArea
                 }
-                .padding(16)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            } else {
+                // For LocalChangesView, don't show the toolbar.
+                // 对于“本地修改”视图，不显示工具栏。
+                contentView(for: .fixedOption(.localChanges))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
         }
         .navigationTitle(repository.displayName)
@@ -95,9 +96,20 @@ struct RepositoryView: View {
         }
     }
     
-    // ... (contentView and other subviews remain the same)
-    // ... (contentView 和其他子视图保持不变)
-    
+    /// The main content area that shows different views based on selection.
+    /// 根据选择显示不同视图的主内容区域。
+    private var mainContentArea: some View {
+        Group {
+            if let item = viewModel.selectedFunctionItem {
+                contentView(for: item)
+            } else {
+                defaultContentView
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
     @ViewBuilder
     private func contentView(for item: SelectedFunctionItem) -> some View {
         switch item {
@@ -106,7 +118,7 @@ struct RepositoryView: View {
             case .defaultHistory:
                 HistoryView(repository: repository)
             case .localChanges:
-                placeholderView(for: "本地修改", icon: "doc.text.below.ecg", color: .blue)
+                LocalChangesView(repository: repository)
             case .stashList:
                 placeholderView(for: "Stash列表", icon: "tray.full", color: .purple)
             }

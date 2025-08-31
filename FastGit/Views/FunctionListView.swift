@@ -19,16 +19,9 @@ enum FunctionListOption: String, CaseIterable, Identifiable {
     
     var iconName: String {
         switch self {
-        case .defaultHistory: return "doc.text.below.ecg"
+        case .defaultHistory: return "clock"
         case .localChanges: return "doc.text.below.ecg"
         case .stashList: return "tray.full"
-        }
-    }
-    
-    var isImplemented: Bool {
-        switch self {
-        case .defaultHistory: return true
-        default: return false
         }
     }
 }
@@ -427,19 +420,15 @@ private struct FixedFunctionButton: View {
                 Image(systemName: option.iconName).font(.system(size: 16, weight: .medium)).foregroundStyle(isSelected ? .white : .primary).frame(width: 20)
                 Text(option.rawValue).font(.system(size: 14, weight: .medium)).foregroundStyle(isSelected ? .white : .primary)
                 Spacer()
-                if !option.isImplemented {
-                    Image(systemName: "clock.badge").font(.system(size: 12)).foregroundStyle(.secondary)
-                }
             }
             .padding(.horizontal, 16).padding(.vertical, 8)
             .background(RoundedRectangle(cornerRadius: 8).fill(isSelected ? Color.accentColor : isHovered ? Color.primary.opacity(0.08) : Color.clear))
         }
         .buttonStyle(.plain)
-        .disabled(!option.isImplemented)
-        .opacity(option.isImplemented ? 1.0 : 0.6)
+        .opacity(1.0)
         .padding(.horizontal, 8)
         .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.2)) { isHovered = hovering && option.isImplemented }
+            withAnimation(.easeInOut(duration: 0.2)) { isHovered = hovering }
         }
     }
 }
@@ -527,4 +516,3 @@ struct FunctionListView_Previews: PreviewProvider {
     }
 }
 #endif
-

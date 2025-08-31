@@ -28,12 +28,6 @@ enum GitOperation: String, CaseIterable {
         }
     }
     
-    /// 是否已实现
-    var isImplemented: Bool {
-        // 当前都是预留功能
-        return false
-    }
-    
     /// 工具提示
     var tooltip: String {
         switch self {
@@ -117,10 +111,8 @@ struct RepositoryToolbarView: View {
     /// 执行Git操作
     /// - Parameter operation: 要执行的操作
     private func performGitOperation(_ operation: GitOperation) {
-        guard operation.isImplemented else {
-            print("⚠️ \(operation.rawValue)功能暂未实现")
-            return
-        }
+        // 这是一个预留功能
+        print("⚠️ \(operation.rawValue)功能暂未实现")
         
         // 模拟操作执行
         withAnimation {
@@ -163,29 +155,19 @@ private struct ToolbarButton: View {
             .padding(.vertical, 6)
             .background(
                 RoundedRectangle(cornerRadius: 6)
-                    .fill(
-                        isHovered && operation.isImplemented 
-                        ? Color.accentColor.opacity(0.1) 
-                        : Color.clear
-                    )
+                    .fill(isHovered ? Color.accentColor.opacity(0.1) : Color.clear)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 6)
-                    .stroke(
-                        isHovered && operation.isImplemented 
-                        ? Color.accentColor.opacity(0.3) 
-                        : Color.clear,
-                        lineWidth: 1
-                    )
+                    .stroke(isHovered ? Color.accentColor.opacity(0.3) : Color.clear, lineWidth: 1)
             )
         }
         .buttonStyle(.plain)
-        .disabled(!operation.isImplemented || isLoading)
-        .opacity(operation.isImplemented ? 1.0 : 0.5)
+        .disabled(isLoading)
         .help(operation.tooltip)
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.2)) {
-                isHovered = hovering && operation.isImplemented
+                isHovered = hovering
             }
         }
     }

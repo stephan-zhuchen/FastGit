@@ -199,15 +199,6 @@ class GitService: ObservableObject {
             
             isLoading = false
             
-//            print("✅ 获取到 \(commits.count) 个提交记录")
-//            for commit in commits.prefix(3) {
-//                let refsInfo = commit.hasReferences ? " [分支: \(commit.branches.joined(separator: ", ")), 标签: \(commit.tags.joined(separator: ", "))]" : ""
-//                print("   - \(commit.shortSha): \(commit.message)\(refsInfo)")
-//            }
-//            if commits.count > 3 {
-//                print("   ... 及其他 \(commits.count - 3) 个提交")
-//            }
-            
             return (commits, branches, tags)
             
         } catch {
@@ -237,8 +228,6 @@ class GitService: ObservableObject {
         }
     }
     
-    // ** FIX: Switched to a low-level C API call to get submodules **
-    // ** 修复：切换到底层 C API 调用来获取子模块 **
     /// 获取仓库的所有子模块
     /// - Parameter repository: 目标仓库
     /// - Returns: 子模块相对路径的数组
@@ -246,47 +235,27 @@ class GitService: ObservableObject {
         print("📦 开始获取子模块...")
         var submodulePaths: [String] = []
 
-        // Since the provided SwiftGitX version lacks a submodule collection,
-        // we'll use the underlying libgit2 C functions directly.
-        // 由于提供的 SwiftGitX 版本缺少子模块集合，我们将直接使用底层的 libgit2 C 函数。
-        
-        // Define the callback function that libgit2 will call for each submodule.
-        // 定义 libgit2 将为每个子模块调用的回调函数。
         let callback: git_submodule_cb = { submodule, name, payload in
-            // Safely unwrap the payload to get a pointer to our Swift array.
-            // 安全地解包 payload，以获取指向我们 Swift 数组的指针。
             guard let submodule = submodule,
                   let payload = payload else { return -1 }
             
             let submodulePathsPointer = payload.assumingMemoryBound(to: [String].self)
             
-            // Get the submodule path using the C API.
-            // 使用 C API 获取子模块路径。
             if let pathPointer = git_submodule_path(submodule) {
                 let path = String(cString: pathPointer)
                 submodulePathsPointer.pointee.append(path)
             }
             
-            return 0 // Return 0 to continue iteration.
+            return 0
         }
 
         do {
             let repoURL = URL(fileURLWithPath: repository.path)
-            // We need the raw OpaquePointer to the repository for C functions.
-            // We can get this by temporarily opening the repository again.
-            // This is safe and lightweight.
-            // 我们需要仓库的原始 OpaquePointer 来调用 C 函数。
-            // 我们可以通过临时再次打开仓库来获得它。这是安全且轻量级的。
             let swiftGitXRepo = try Repository.open(at: repoURL)
             
-            // Use reflection to access the private 'pointer' property of the Repository object.
-            // 使用反射来访问 Repository 对象的私有 'pointer' 属性。
             let mirror = Mirror(reflecting: swiftGitXRepo)
             if let repoPointer = mirror.descendant("pointer") as? OpaquePointer {
                 
-                // Call the C function `git_submodule_foreach`, passing our callback
-                // and a pointer to our array as the payload.
-                // 调用 C 函数 `git_submodule_foreach`，将我们的回调函数和指向数组的指针作为 payload 传递。
                 let status = withUnsafeMutablePointer(to: &submodulePaths) { payloadPointer in
                     git_submodule_foreach(repoPointer, callback, payloadPointer)
                 }
@@ -314,7 +283,6 @@ class GitService: ObservableObject {
     private func fetchBranches(from repo: Repository) async throws -> [GitBranch] {
         var branches: [GitBranch] = []
 
-        // --- 开始诊断 ---
         print("🔍 [诊断] 开始执行 fetchBranches...")
         do {
             let remotes = try repo.remote.list()
@@ -327,9 +295,7 @@ class GitService: ObservableObject {
         } catch {
             print("❌ [诊断] 列出远程仓库失败: \(error)")
         }
-        // --- 结束诊断 ---
 
-        // 获取当前分支
         let currentBranchName: String?
         do {
             let currentBranch = try repo.branch.current
@@ -340,7 +306,6 @@ class GitService: ObservableObject {
             currentBranchName = nil
         }
         
-        // 获取所有本地分支
         do {
             let localBranches = try repo.branch.list(.local)
             print("🌿 找到 \(localBranches.count) 个本地分支。")
@@ -359,16 +324,13 @@ class GitService: ObservableObject {
         }
         
         do {
-            // 1. 先获取所有 Remote 对象。
             let remotes = try repo.remote.list()
             var remoteBranchCount = 0
 
-            // 2. 遍历每一个 Remote 对象
             for remote in remotes {
-                // 3. 访问其 'branches' 属性来获取该远程下的所有分支
                 for remoteBranch in remote.branches {
                     let fastGitBranch = GitBranch(
-                        name: remoteBranch.name, // 'name' 已经是 shorthand, e.g., "origin/develop"
+                        name: remoteBranch.name,
                         isCurrent: false,
                         isRemote: true,
                         targetSha: remoteBranch.target.id.hex
@@ -395,7 +357,6 @@ class GitService: ObservableObject {
         do {
             let swiftGitXTags = try repo.tag.list()
             for swiftGitXTag in swiftGitXTags {
-                // 检查是否为注释标签（通过tagger是否为nil来判断）
                 let isAnnotated = swiftGitXTag.tagger != nil
                 
                 var message: String?
@@ -403,7 +364,6 @@ class GitService: ObservableObject {
                 var taggerEmail: String?
                 var date: Date?
                 
-                // 如果是注释标签，获取额外信息
                 if isAnnotated {
                     message = swiftGitXTag.message
                     taggerName = swiftGitXTag.tagger?.name
@@ -431,40 +391,26 @@ class GitService: ObservableObject {
     }
     
     /// 创建提交SHA到引用名称的映射
-    /// - Parameter branches: 分支数组
-    /// - Returns: SHA -> [引用名称] 的映射
     private func createCommitReferencesMap(branches: [GitBranch]) -> [String: [String]] {
         var map: [String: [String]] = [:]
         for branch in branches {
             if let sha = branch.targetSha {
-                if map[sha] == nil {
-                    map[sha] = []
-                }
-                map[sha]?.append(branch.name)
+                map[sha, default: []].append(branch.name)
             }
         }
         return map
     }
     
     /// 创建提交SHA到标签名称的映射
-    /// - Parameter tags: 标签数组
-    /// - Returns: SHA -> [标签名称] 的映射
     private func createCommitReferencesMap(tags: [GitTag]) -> [String: [String]] {
         var map: [String: [String]] = [:]
         for tag in tags {
-            if map[tag.targetSha] == nil {
-                map[tag.targetSha] = []
-            }
-            map[tag.targetSha]?.append(tag.name)
+            map[tag.targetSha, default: []].append(tag.name)
         }
         return map
     }
-    
+
     /// 获取指定提交的变更文件列表
-    /// - Parameters:
-    ///   - commit: 目标提交
-    ///   - repository: 所在仓库
-    /// - Returns: 文件状态列表
     func fetchChanges(for commit: GitCommit, in repository: GitRepository) async -> [GitFileStatus] {
         print("🔍 Fetching changes for commit: \(commit.shortSha)")
         var changes: [GitFileStatus] = []
@@ -473,37 +419,17 @@ class GitService: ObservableObject {
             let repoURL = URL(fileURLWithPath: repository.path)
             let swiftGitXRepo = try Repository.open(at: repoURL)
             
-            // 1. 从我们的 GitCommit 模型找到 SwiftGitX 的 Commit 对象
             let oid = try OID(hex: commit.sha)
             let swiftGitXCommit: Commit = try swiftGitXRepo.show(id: oid)
             
-            // 2. 获取此提交与其父提交的差异 [cite: Repository.swift]
             let diff = try swiftGitXRepo.diff(commit: swiftGitXCommit)
             
-            // 3. 将 diff.changes 转换为我们的 GitFileStatus 模型
             for delta in diff.changes {
                 let path = delta.newFile.path
-                var statusType: GitFileStatusType
+                let statusType = convertStatus(from: delta.type)
                 
-                switch delta.type {
-                case .added:
-                    statusType = .added
-                case .deleted:
-                    statusType = .deleted
-                case .modified:
-                    statusType = .modified
-                case .renamed:
-                    statusType = .renamed
-                case .copied:
-                    statusType = .copied
-                case .typeChange:
-                    statusType = .typeChanged
-                default:
-                    // 对于此上下文，我们可以忽略其他类型
-                    continue
-                }
-                
-                let fileStatus = GitFileStatus(path: path, status: statusType, isStaged: false)
+                // We don't have line changes here, so default to 0
+                let fileStatus = GitFileStatus(path: path, status: statusType, linesAdded: 0, linesDeleted: 0)
                 changes.append(fileStatus)
             }
             
@@ -515,12 +441,110 @@ class GitService: ObservableObject {
         
         return changes
     }
+    
+    /// 获取当前仓库的文件状态
+    func fetchStatus(for repository: GitRepository) async -> [FileStatusItem] {
+        var fileItems: [String: FileStatusItem] = [:]
 
+        do {
+            let repoURL = URL(fileURLWithPath: repository.path)
+            let swiftGitXRepo = try Repository.open(at: repoURL)
+
+            // --- 修改点: 增加 .includeIgnored 选项 ---
+            let statusOptions: StatusOption = [.includeUntracked, .includeIgnored]
+            let statusEntries = try swiftGitXRepo.status(options: statusOptions)
+            
+            let stagedDiff = try swiftGitXRepo.diff(to: .index)
+            let stagedPatchMap = Dictionary(uniqueKeysWithValues: stagedDiff.patches.map { ($0.delta.newFile.path, $0) })
+            
+            let workingTreeDiff = try swiftGitXRepo.diff(to: .workingTree)
+            let workingTreePatchMap = Dictionary(uniqueKeysWithValues: workingTreeDiff.patches.map { ($0.delta.newFile.path, $0) })
+
+            for entry in statusEntries {
+                var path: String?
+                var stagedChange: FileChange?
+                var unstagedChange: FileChange?
+
+                if let indexDelta = entry.index {
+                    path = indexDelta.newFile.path
+                    let (added, deleted) = calculateLineChanges(for: path, in: stagedPatchMap)
+                    stagedChange = FileChange(
+                        path: path!,
+                        status: convertStatus(from: indexDelta.type),
+                        linesAdded: added,
+                        linesDeleted: deleted
+                    )
+                }
+                
+                if let workdirDelta = entry.workingTree {
+                    path = workdirDelta.newFile.path
+                    let (added, deleted) = calculateLineChanges(for: path, in: workingTreePatchMap)
+                    unstagedChange = FileChange(
+                        path: path!,
+                        status: convertStatus(from: workdirDelta.type),
+                        linesAdded: added,
+                        linesDeleted: deleted
+                    )
+                }
+
+                if let finalPath = entry.workingTree?.newFile.path ?? entry.index?.newFile.path {
+                    if fileItems[finalPath] == nil {
+                        fileItems[finalPath] = FileStatusItem(path: finalPath, stagedChange: nil, unstagedChange: nil)
+                    }
+                    if let sc = stagedChange {
+                        fileItems[finalPath] = FileStatusItem(path: finalPath, stagedChange: sc, unstagedChange: fileItems[finalPath]?.unstagedChange)
+                    }
+                    if let uc = unstagedChange {
+                        fileItems[finalPath] = FileStatusItem(path: finalPath, stagedChange: fileItems[finalPath]?.stagedChange, unstagedChange: uc)
+                    }
+                }
+            }
+        } catch {
+            print("❌ Failed to fetch status: \(error.localizedDescription)")
+        }
+        
+        return Array(fileItems.values).sorted { $0.path < $1.path }
+    }
+
+    private func calculateLineChanges(for path: String?, in patchMap: [String: Patch]) -> (added: Int, deleted: Int) {
+        guard let path = path, let patch = patchMap[path] else {
+            return (0, 0)
+        }
+        
+        var linesAdded = 0
+        var linesDeleted = 0
+        
+        for hunk in patch.hunks {
+            for line in hunk.lines {
+                if line.type == .addition {
+                    linesAdded += 1
+                } else if line.type == .deletion {
+                    linesDeleted += 1
+                }
+            }
+        }
+        return (linesAdded, linesDeleted)
+    }
+    
+    // --- 修改点: 增加对 .ignored 和 .conflicted 的处理 ---
+    private func convertStatus(from deltaType: Diff.DeltaType) -> GitFileStatusType {
+        switch deltaType {
+        case .added: return .added
+        case .deleted: return .deleted
+        case .modified: return .modified
+        case .renamed: return .renamed
+        case .copied: return .copied
+        case .untracked: return .untracked
+        case .typeChange: return .typeChanged
+        case .ignored: return .ignored
+        case .conflicted: return .conflicted
+        default: return .modified
+        }
+    }
 }
 
-// MARK: - 错误类型定义
 
-/// GitService错误类型
+// MARK: - 错误类型定义
 enum GitServiceError: LocalizedError {
     case repositoryNotFound(path: String)
     case notAGitRepository(path: String)
@@ -543,3 +567,4 @@ enum GitServiceError: LocalizedError {
         }
     }
 }
+
