@@ -91,6 +91,60 @@ struct RepositoryView: View {
                 onCancel: {}
             )
         }
+        .sheet(isPresented: $viewModel.showingPullSheet) {
+            if var pullOptions = viewModel.pullOptions {
+                PullView(
+                    options: Binding(
+                        get: { pullOptions },
+                        set: { viewModel.pullOptions = $0 }
+                    ),
+                    allRemotes: viewModel.remotes,
+                    allBranches: viewModel.branches,
+                    hasUncommittedChanges: viewModel.hasUncommittedChanges,
+                    onConfirm: {
+                        viewModel.performPull(for: repository)
+                    },
+                    onCancel: {}
+                )
+            }
+        }
+        .sheet(isPresented: $viewModel.showingStashSheet) {
+            StashView(
+                options: $viewModel.stashOptions,
+                onConfirm: {
+                    viewModel.performStash(for: repository)
+                },
+                onCancel: {}
+            )
+        }
+        .sheet(isPresented: $viewModel.showingPushSheet) {
+            if var pushOptions = viewModel.pushOptions {
+                PushView(
+                    options: Binding(
+                        get: { pushOptions },
+                        set: { viewModel.pushOptions = $0 }
+                    ),
+                    allRemotes: viewModel.remotes,
+                    allLocalBranches: viewModel.branches.filter { !$0.isRemote },
+                    allRemoteBranches: viewModel.branches.filter { $0.isRemote },
+                    onConfirm: {
+                        viewModel.performPush(for: repository)
+                    },
+                    onCancel: {}
+                )
+            }
+        }
+        // --- 新增: Fetch Sheet ---
+        .sheet(isPresented: $viewModel.showingFetchSheet) {
+            FetchView(
+                options: $viewModel.fetchOptions,
+                allRemotes: viewModel.remotes,
+                onConfirm: {
+                    viewModel.performFetch(for: repository)
+                },
+                onCancel: {}
+            )
+        }
     }
     
     @ViewBuilder

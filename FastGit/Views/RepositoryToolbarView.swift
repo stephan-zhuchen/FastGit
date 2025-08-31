@@ -12,7 +12,8 @@ enum GitOperation: String, CaseIterable {
     case pull = "Pull"
     case push = "Push"
     case fetch = "Fetch"
-    case newBranch = "Branch" // 新增
+    case newBranch = "Branch"
+    case stash = "Stash"
     case sync = "同步"
     
     /// 图标名称
@@ -26,6 +27,8 @@ enum GitOperation: String, CaseIterable {
             return "arrow.clockwise.circle"
         case .newBranch:
             return "plus"
+        case .stash:
+            return "archivebox"
         case .sync:
             return "arrow.triangle.2.circlepath"
         }
@@ -42,6 +45,8 @@ enum GitOperation: String, CaseIterable {
             return "获取远程更新"
         case .newBranch:
             return "创建新分支"
+        case .stash:
+            return "贮藏本地变更"
         case .sync:
             return "同步远程仓库"
         }
@@ -120,8 +125,8 @@ private struct ToolbarButton: View {
             )
         }
         .buttonStyle(.plain)
-        .disabled(operation == .push || isLoading)
-        .opacity(operation == .push ? 0.5 : 1.0)
+        // --- 修复点: 只在加载中时禁用 ---
+        .disabled(isLoading)
         .help(operation.tooltip)
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.2)) {

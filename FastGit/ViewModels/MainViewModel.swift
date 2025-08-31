@@ -26,14 +26,23 @@ class MainViewModel: ObservableObject {
     @Published var branches: [GitBranch] = []
     @Published var tags: [GitTag] = []
     @Published var submodules: [String] = []
+    @Published var remotes: [String] = [] // --- 新增 ---
     @Published var selectedFunctionItem: SelectedFunctionItem? = .fixedOption(.defaultHistory)
     @Published var expandedSections: Set<ExpandableFunctionType> = [.localBranches]
 
     // --- Toolbar State ---
     @Published var isPerformingToolbarAction = false
     @Published var showingNewBranchSheet = false
+    @Published var showingPullSheet = false
+    @Published var showingStashSheet = false
+    @Published var showingPushSheet = false
+    @Published var showingFetchSheet = false // --- 新增 ---
     @Published var hasUncommittedChanges = false
     @Published var newBranchOptions = NewBranchOptions(baseBranch: GitBranch(name: ""))
+    @Published var pullOptions: PullOptions?
+    @Published var stashOptions = StashOptions()
+    @Published var pushOptions: PushOptions?
+    @Published var fetchOptions = FetchOptions() // --- 新增 ---
 
     
     // MARK: - Private Properties
@@ -104,9 +113,11 @@ class MainViewModel: ObservableObject {
         
         async let historyData = gitService.fetchCommitHistory(for: repository)
         async let submoduleData = gitService.fetchSubmodules(for: repository)
+        async let remotesData = gitService.listRemotes(for: repository) // --- 新增 ---
         
         let (fetchedCommits, fetchedBranches, fetchedTags) = await historyData
         let fetchedSubmodules = await submoduleData
+        self.remotes = await remotesData // --- 新增 ---
 
         self.commits = fetchedCommits
         self.branches = fetchedBranches
@@ -151,15 +162,33 @@ class MainViewModel: ObservableObject {
     func handleToolbarAction(_ operation: GitOperation, for repository: GitRepository) {
         Task {
             switch operation {
-            case .fetch, .pull, .sync:
+            case .sync: // Sync performs fetch for now
                 isPerformingToolbarAction = true
-                await gitService.fetch(for: repository)
+                await gitService.fetch(with: FetchOptions(), in: repository) // Sync uses default fetch
                 await self.refreshData(for: repository)
                 isPerformingToolbarAction = false
                 
+            case .fetch:
+                self.fetchOptions = FetchOptions()
+                self.showingFetchSheet = true
+
+            case .pull:
+                let statusItems = await gitService.fetchStatus(for: repository)
+                self.hasUncommittedChanges = statusItems.contains {
+                    $0.displayStatus != .ignored && $0.displayStatus != .untracked
+                }
+                
+                guard let localBranch = branches.first(where: { $0.isCurrent }),
+                      let remoteBranch = branches.first(where: { $0.isRemote && $0.shortName == localBranch.name }) else {
+                    self.errorMessage = "无法找到当前分支或其对应的远程分支。"
+                    return
+                }
+                
+                self.pullOptions = PullOptions(remoteBranch: remoteBranch, localBranch: localBranch)
+                self.showingPullSheet = true
+
             case .newBranch:
                 let statusItems = await gitService.fetchStatus(for: repository)
-                // --- 最终修复点: 同时排除 .ignored 和 .untracked ---
                 self.hasUncommittedChanges = statusItems.contains {
                     $0.displayStatus != .ignored && $0.displayStatus != .untracked
                 }
@@ -170,10 +199,20 @@ class MainViewModel: ObservableObject {
                 } else {
                     self.errorMessage = "无法确定当前分支以创建新分支。"
                 }
+            
+            case .stash:
+                self.stashOptions = StashOptions()
+                self.showingStashSheet = true
                 
             case .push:
-                print("⚠️ Push functionality is not yet implemented.")
-                break
+                guard let localBranch = branches.first(where: { $0.isCurrent }) else {
+                    self.errorMessage = "无法找到要推送的当前分支。"
+                    return
+                }
+                
+                let remoteBranch = branches.first { $0.isRemote && $0.shortName == localBranch.name }
+                self.pushOptions = PushOptions(localBranch: localBranch, remoteBranch: remoteBranch)
+                self.showingPushSheet = true
             }
         }
     }
@@ -189,6 +228,54 @@ class MainViewModel: ObservableObject {
             if success {
                 await self.refreshData(for: repository)
             }
+            isPerformingToolbarAction = false
+        }
+    }
+    
+    /// 执行 Pull 操作
+    func performPull(for repository: GitRepository) {
+        guard let options = pullOptions else { return }
+        print("Performing pull with options: \(options)")
+        // TODO: 调用 GitService 执行实际的 pull 操作
+        
+        Task {
+            isPerformingToolbarAction = true
+            await Task.sleep(1_000_000_000)
+            await self.refreshData(for: repository)
+            isPerformingToolbarAction = false
+        }
+    }
+
+    /// 执行 Stash 操作
+    func performStash(for repository: GitRepository) {
+        print("Performing stash with options: \(stashOptions)")
+        Task {
+            isPerformingToolbarAction = true
+            await gitService.stash(with: stashOptions, in: repository)
+            await self.refreshData(for: repository)
+            isPerformingToolbarAction = false
+        }
+    }
+    
+    /// 执行 Push 操作
+    func performPush(for repository: GitRepository) {
+        guard let options = pushOptions else { return }
+        print("Performing push with options: \(options)")
+        Task {
+            isPerformingToolbarAction = true
+            await gitService.push(with: options, in: repository)
+            await self.refreshData(for: repository)
+            isPerformingToolbarAction = false
+        }
+    }
+    
+    /// 执行 Fetch 操作
+    func performFetch(for repository: GitRepository) {
+        print("Performing fetch with options: \(fetchOptions)")
+        Task {
+            isPerformingToolbarAction = true
+            await gitService.fetch(with: fetchOptions, in: repository)
+            await self.refreshData(for: repository)
             isPerformingToolbarAction = false
         }
     }

@@ -9,6 +9,80 @@ import Foundation
 import SwiftGitX
 import libgit2
 
+// --- 新增: 辅助扩展以暴露一个功能更强大的 fetch 和 push 方法 ---
+fileprivate extension Repository {
+    func push(remote: Remote, refspecs: [String]) async throws {
+        try await withUnsafeThrowingContinuation { (continuation: UnsafeContinuation<Void, Error>) in
+            do {
+                let mirror = Mirror(reflecting: self)
+                guard let repoPointer = mirror.descendant("pointer") as? OpaquePointer else {
+                    throw GitServiceError.operationFailed("Could not get repository pointer via reflection.")
+                }
+
+                var remotePointer: OpaquePointer?
+                defer { git_remote_free(remotePointer) }
+                let remoteLookupStatus = git_remote_lookup(&remotePointer, repoPointer, remote.name)
+                guard remoteLookupStatus == GIT_OK.rawValue else {
+                    throw RepositoryError.failedToPush("Remote '\(remote.name)' not found.")
+                }
+
+                var cStrings = refspecs.map { str in UnsafeMutablePointer(mutating: (str as NSString).utf8String) }
+                var gitStrArray = git_strarray(strings: &cStrings, count: refspecs.count)
+
+                DispatchQueue.global(qos: .userInitiated).async {
+                    let pushStatus = git_remote_push(remotePointer, &gitStrArray, nil)
+                    
+                    if pushStatus == GIT_OK.rawValue {
+                        continuation.resume()
+                    } else {
+                        let errorMessage = String(cString: git_error_last().pointee.message)
+                        continuation.resume(throwing: RepositoryError.failedToPush(errorMessage))
+                    }
+                }
+            } catch {
+                continuation.resume(throwing: error)
+            }
+        }
+    }
+    
+    func fetch(remote: Remote, options: FetchOptions) async throws {
+        try await withUnsafeThrowingContinuation { (continuation: UnsafeContinuation<Void, Error>) in
+            do {
+                let mirror = Mirror(reflecting: self)
+                guard let repoPointer = mirror.descendant("pointer") as? OpaquePointer else {
+                    throw GitServiceError.operationFailed("Could not get repository pointer.")
+                }
+
+                var remotePointer: OpaquePointer?
+                defer { git_remote_free(remotePointer) }
+                guard git_remote_lookup(&remotePointer, repoPointer, remote.name) == GIT_OK.rawValue else {
+                    throw RepositoryError.failedToFetch("Remote '\(remote.name)' not found.")
+                }
+                
+                var fetchOptions = git_fetch_options()
+                git_fetch_options_init(&fetchOptions, UInt32(GIT_FETCH_OPTIONS_VERSION))
+                
+                // --- 修复点: 使用正确的 libgit2 枚举值 ---
+                fetchOptions.prune = options.prune ? GIT_FETCH_PRUNE : GIT_FETCH_PRUNE_UNSPECIFIED
+                fetchOptions.download_tags = options.fetchAllTags ? GIT_REMOTE_DOWNLOAD_TAGS_ALL : GIT_REMOTE_DOWNLOAD_TAGS_AUTO
+
+                DispatchQueue.global(qos: .userInitiated).async {
+                    let status = git_remote_fetch(remotePointer, nil, &fetchOptions, nil)
+                    if status == GIT_OK.rawValue {
+                        continuation.resume()
+                    } else {
+                        let errorMessage = String(cString: git_error_last().pointee.message)
+                        continuation.resume(throwing: RepositoryError.failedToFetch(errorMessage))
+                    }
+                }
+            } catch {
+                continuation.resume(throwing: error)
+            }
+        }
+    }
+}
+
+
 /// Git服务类 - 与SwiftGitX交互的唯一入口
 @MainActor
 class GitService: ObservableObject {
@@ -506,8 +580,7 @@ class GitService: ObservableObject {
     }
     
     /// 执行 fetch 操作
-    /// - Parameter repository: 目标仓库
-    func fetch(for repository: GitRepository) async {
+    func fetch(with options: FetchOptions, in repository: GitRepository) async {
         isLoading = true
         errorMessage = nil
         
@@ -515,13 +588,21 @@ class GitService: ObservableObject {
             let repoURL = URL(fileURLWithPath: repository.path)
             let swiftGitXRepo = try Repository.open(at: repoURL)
             
-            if let origin = swiftGitXRepo.remote["origin"] {
-                try await swiftGitXRepo.fetch(remote: origin)
-                print("✅ Fetch successful for \(repository.displayName)")
+            if options.remote == "all" {
+                let allRemotes = try swiftGitXRepo.remote.list()
+                for remote in allRemotes {
+                    print("Fetching from \(remote.name)...")
+                    try await swiftGitXRepo.fetch(remote: remote, options: options)
+                }
+                print("✅ Fetch successful for all remotes in \(repository.displayName)")
             } else {
-                throw GitServiceError.operationFailed("Remote 'origin' not found.")
+                if let remote = swiftGitXRepo.remote[options.remote] {
+                    try await swiftGitXRepo.fetch(remote: remote, options: options)
+                    print("✅ Fetch successful for remote '\(options.remote)' in \(repository.displayName)")
+                } else {
+                    throw GitServiceError.operationFailed("Remote '\(options.remote)' not found.")
+                }
             }
-            
         } catch {
             let errorMsg = "Fetch failed: \(error.localizedDescription)"
             errorMessage = errorMsg
@@ -532,11 +613,6 @@ class GitService: ObservableObject {
     }
 
     /// 创建新分支
-    /// - Parameters:
-    ///   - name: 新分支的名称
-    ///   - options: 创建分支的选项
-    ///   - repository: 目标仓库
-    /// - Returns: 是否创建成功
     func createBranch(name: String, options: NewBranchOptions, in repository: GitRepository) async -> Bool {
         isLoading = true
         errorMessage = nil
@@ -545,7 +621,6 @@ class GitService: ObservableObject {
             let repoURL = URL(fileURLWithPath: repository.path)
             let swiftGitXRepo = try Repository.open(at: repoURL)
 
-            // 1. 处理未提交的变更
             let statusItems = try swiftGitXRepo.status()
             if !statusItems.isEmpty {
                 switch options.uncommittedChangesOption {
@@ -561,14 +636,12 @@ class GitService: ObservableObject {
                 }
             }
             
-            // 2. 找到基准 commit
             guard let baseBranchSha = options.baseBranch.targetSha,
                   let baseCommitOid = try? OID(hex: baseBranchSha) else {
                 throw GitServiceError.operationFailed("Base branch has no valid target SHA.")
             }
             let baseCommit: Commit = try swiftGitXRepo.show(id: baseCommitOid)
 
-            // 3. 创建新分支
             let newBranch = try swiftGitXRepo.branch.create(
                 named: name,
                 target: baseCommit,
@@ -576,14 +649,10 @@ class GitService: ObservableObject {
             )
             print("✅ Successfully created branch '\(name)'")
             
-            // 4. 如果需要，切换到新分支
             if options.checkoutAfterCreation {
                 try swiftGitXRepo.switch(to: newBranch)
                 print("✅ Switched to new branch '\(name)'")
             }
-
-            // TODO: Stash pop logic
-            // TODO: Submodule update logic
 
             isLoading = false
             return true
@@ -594,6 +663,79 @@ class GitService: ObservableObject {
             print("❌ \(errorMsg)")
             isLoading = false
             return false
+        }
+    }
+    
+    /// 执行 Stash 操作
+    func stash(with options: StashOptions, in repository: GitRepository) async {
+        isLoading = true
+        errorMessage = nil
+        
+        do {
+            let repoURL = URL(fileURLWithPath: repository.path)
+            let swiftGitXRepo = try Repository.open(at: repoURL)
+            
+            var stashFlags: StashOption = .default
+            if options.includeUntracked {
+                stashFlags.insert(.includeUntracked)
+            }
+            
+            _ = try swiftGitXRepo.stash.save(message: options.message)
+            print("✅ Stash successful")
+            
+        } catch {
+            let errorMsg = "Stash failed: \(error.localizedDescription)"
+            errorMessage = errorMsg
+            print("❌ \(errorMsg)")
+        }
+        
+        isLoading = false
+    }
+    
+    /// 执行 Push 操作
+    func push(with options: PushOptions, in repository: GitRepository) async {
+        isLoading = true
+        errorMessage = nil
+        
+        do {
+            let repoURL = URL(fileURLWithPath: repository.path)
+            let swiftGitXRepo = try Repository.open(at: repoURL)
+            
+            guard let remote = swiftGitXRepo.remote[options.remote] else {
+                throw GitServiceError.operationFailed("Remote '\(options.remote)' not found.")
+            }
+            
+            let remoteBranchName = options.remoteBranch?.shortName ?? options.localBranch.shortName
+            let localBranchRef = "refs/heads/\(options.localBranch.shortName)"
+            let remoteBranchRef = "refs/heads/\(remoteBranchName)"
+            
+            var refspec = "\(localBranchRef):\(remoteBranchRef)"
+            if options.forcePush {
+                refspec = "+\(refspec)"
+            }
+
+            try await swiftGitXRepo.push(remote: remote, refspecs: [refspec])
+            
+            print("✅ Push successful to \(options.remote)/\(remoteBranchName)")
+
+        } catch {
+            let errorMsg = "Push failed: \(error.localizedDescription)"
+            errorMessage = errorMsg
+            print("❌ \(errorMsg)")
+        }
+        
+        isLoading = false
+    }
+    
+    /// 获取远程仓库列表
+    func listRemotes(for repository: GitRepository) async -> [String] {
+        do {
+            let repoURL = URL(fileURLWithPath: repository.path)
+            let swiftGitXRepo = try Repository.open(at: repoURL)
+            return try swiftGitXRepo.remote.list().compactMap { $0.name }
+        } catch {
+            print("❌ Failed to list remotes: \(error.localizedDescription)")
+            return []
         }
     }
 
