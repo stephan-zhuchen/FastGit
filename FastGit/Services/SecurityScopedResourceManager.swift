@@ -20,14 +20,21 @@ class SecurityScopedResourceManager: ObservableObject {
     private var activeURLs: [String: URL] = [:]
     private let userDefaults = UserDefaults.standard
     private let bookmarksKey = "SecurityScopedBookmarks"
-    
+    // 新增：SSH文件夹书签的Key
+    private let sshBookmarkKey = "SecurityScopedSSHBookmark"
+
+    // 新增：用于跟踪SSH文件夹访问状态的URL
+    private var sshFolderURL: URL?
+
     // MARK: - 初始化
     private init() {
         loadSavedBookmarks()
+        // 新增：加载并尝试恢复SSH文件夹的访问权限
+        restoreSshFolderAccess()
     }
-    
-    // MARK: - 公共方法
-    
+
+    // MARK: - 公共方法 (仓库相关)
+
     /// 为仓库路径创建或获取安全作用域访问权限
     /// - Parameter repositoryPath: 仓库路径
     /// - Returns: 可访问的URL，如果失败返回nil
@@ -93,6 +100,73 @@ class SecurityScopedResourceManager: ObservableObject {
         activeURLs.removeAll()
         userDefaults.removeObject(forKey: bookmarksKey)
     }
+
+    // MARK: - 新增公共方法 (SSH文件夹相关)
+
+    /// 检查是否已经获得了对SSH文件夹的访问权限
+    var hasSshFolderAccess: Bool {
+        return sshFolderURL != nil
+    }
+
+    /// 请求用户授权访问SSH文件夹
+    func grantSshFolderAccess() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.title = "授权访问SSH文件夹"
+        panel.message = "FastGit需要访问您的.ssh文件夹以使用SSH密钥。请选择您的.ssh文件夹（通常位于您的个人主目录下）。"
+        panel.prompt = "授权访问"
+        
+        // 尝试导航到默认的~/.ssh路径
+        let sshPath = (FileManager.default.homeDirectoryForCurrentUser.path as NSString).appendingPathComponent(".ssh")
+        panel.directoryURL = URL(fileURLWithPath: sshPath)
+        
+        let response = panel.runModal()
+        guard response == .OK, let selectedURL = panel.url else {
+            print("⚠️ 用户取消了SSH文件夹授权")
+            return
+        }
+
+        // 验证用户选择的是否真的是.ssh文件夹
+        guard selectedURL.lastPathComponent == ".ssh" else {
+            // 可以选择弹出一个警告
+            let alert = NSAlert()
+            alert.messageText = "文件夹选择错误"
+            alert.informativeText = "请确保您选择的是名为'.ssh'的文件夹。"
+            alert.addButton(withTitle: "好的")
+            alert.runModal()
+            return
+        }
+
+        // 创建并保存书签
+        do {
+            let bookmarkData = try selectedURL.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil)
+            userDefaults.set(bookmarkData, forKey: sshBookmarkKey)
+            print("✅ 成功创建并保存SSH文件夹的书签")
+            
+            // 立即开始访问
+            if selectedURL.startAccessingSecurityScopedResource() {
+                self.sshFolderURL = selectedURL
+                print("✅ 已开始访问SSH文件夹")
+            }
+        } catch {
+            print("❌ 创建SSH文件夹书签失败: \(error.localizedDescription)")
+        }
+    }
+
+    /// 开始访问SSH文件夹（在执行git操作前调用）
+    func startAccessingSshFolder() -> Bool {
+        guard let url = sshFolderURL else {
+            return false
+        }
+        return url.startAccessingSecurityScopedResource()
+    }
+    
+    /// 停止访问SSH文件夹（在git操作完成后调用）
+    func stopAccessingSshFolder() {
+        sshFolderURL?.stopAccessingSecurityScopedResource()
+    }
     
     // MARK: - 私有方法
     
@@ -135,6 +209,34 @@ class SecurityScopedResourceManager: ObservableObject {
             activeBookmarks.removeValue(forKey: path)
             saveBookmarks()
             return nil
+        }
+    }
+
+    /// 新增：恢复对SSH文件夹的访问
+    private func restoreSshFolderAccess() {
+        guard let bookmarkData = userDefaults.data(forKey: sshBookmarkKey) else {
+            print("ℹ️ 未找到已保存的SSH文件夹书签")
+            return
+        }
+        
+        do {
+            var isStale = false
+            let url = try URL(resolvingBookmarkData: bookmarkData, options: .withSecurityScope, relativeTo: nil, bookmarkDataIsStale: &isStale)
+            
+            if isStale {
+                print("⚠️ SSH文件夹书签已过期，需要用户重新授权")
+                userDefaults.removeObject(forKey: sshBookmarkKey) // 移除过期的书签
+                return
+            }
+            
+            if url.startAccessingSecurityScopedResource() {
+                self.sshFolderURL = url
+                print("✅ 已成功恢复对SSH文件夹的访问权限")
+            } else {
+                print("❌ 恢复SSH文件夹访问权限失败")
+            }
+        } catch {
+            print("❌ 解析SSH文件夹书签失败: \(error.localizedDescription)")
         }
     }
     

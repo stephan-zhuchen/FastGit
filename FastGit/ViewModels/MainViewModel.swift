@@ -265,10 +265,37 @@ class MainViewModel: ObservableObject {
     /// 执行 Fetch 操作
     func performFetch(for repository: GitRepository) {
         print("Performing fetch with options: \(fetchOptions)")
+
+        // 新增：在执行操作前获取 SecurityScopedResourceManager 实例
+        let securityManager = SecurityScopedResourceManager.shared
+        
+        // 新增：检查SSH文件夹访问权限
+        guard securityManager.hasSshFolderAccess else {
+            self.errorMessage = "SSH文件夹访问未授权。\n\n请前往 设置 > 高级，并授权应用访问您的.ssh文件夹，以便执行需要SSH密钥的操作。"
+            isPerformingToolbarAction = false
+            return
+        }
+
         Task {
             isPerformingToolbarAction = true
+            
+            // 新增：开始访问SSH文件夹
+            let accessStarted = securityManager.startAccessingSshFolder()
+            if !accessStarted {
+                 self.errorMessage = "无法开始访问SSH文件夹，请在设置中重新授权。"
+                 isPerformingToolbarAction = false
+                 return
+            }
+            
+            // 确保在操作结束后停止访问
+            defer {
+                securityManager.stopAccessingSshFolder()
+                print("ℹ️ 已停止访问SSH文件夹")
+            }
+            
             await gitService.fetch(with: fetchOptions, in: repository)
             await self.refreshData(for: repository)
+            
             isPerformingToolbarAction = false
         }
     }

@@ -12,6 +12,7 @@ struct SettingsView: View {
     private enum Tabs: Hashable {
         case gitConfig
         case general
+        case advanced // 新增一个Tab用于高级设置
     }
 
     @StateObject private var viewModel = SettingsViewModel()
@@ -24,15 +25,15 @@ struct SettingsView: View {
                 }
                 .tag(Tabs.gitConfig)
             
-            // 可以为未来的设置选项预留位置
-            Text("通用设置")
+            // 将SSH设置移到 "高级" Tab
+            AdvancedSettingsView(viewModel: viewModel)
                 .tabItem {
-                    Label("通用", systemImage: "gear")
+                    Label("高级", systemImage: "gearshape.2")
                 }
-                .tag(Tabs.general)
+                .tag(Tabs.advanced)
         }
         .padding(20)
-        .frame(width: 500, height: 240) // 调整了高度以适应新布局
+        .frame(width: 550, height: 300) // 调整了窗口大小
     }
 }
 
@@ -76,9 +77,41 @@ struct GitConfigView: View {
     }
 }
 
+/// 新增：高级设置子视图，用于SSH权限等
+struct AdvancedSettingsView: View {
+    @ObservedObject var viewModel: SettingsViewModel
+
+    var body: some View {
+        Form {
+            Section(header: Text("SSH 访问权限").font(.headline),
+                    footer: Text("为了使用SSH协议（例如 git@github.com）克隆或同步仓库，FastGit需要访问您电脑上的.ssh文件夹。").font(.caption).foregroundColor(.secondary)) {
+                HStack {
+                    if viewModel.hasSshAccess {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(.green)
+                        Text("已授权访问 ~/.ssh 文件夹")
+                    } else {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(.red)
+                        Text("未授权访问 ~/.ssh 文件夹")
+                    }
+                    Spacer()
+                    Button(viewModel.hasSshAccess ? "重新授权" : "授权") {
+                        viewModel.grantSshAccess()
+                    }
+                }
+            }
+        }
+        .padding()
+        .onAppear {
+            viewModel.checkSshAccess()
+        }
+    }
+}
+
+
 struct SettingsView_Previews: PreviewProvider {
     static var previews: some View {
         SettingsView()
     }
 }
-

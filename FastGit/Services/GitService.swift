@@ -59,16 +59,34 @@ fileprivate extension Repository {
                     throw RepositoryError.failedToFetch("Remote '\(remote.name)' not found.")
                 }
                 
+                // 初始化 fetch 选项
                 var fetchOptions = git_fetch_options()
                 git_fetch_options_init(&fetchOptions, UInt32(GIT_FETCH_OPTIONS_VERSION))
                 
+                // 设置 prune 选项
                 fetchOptions.prune = options.prune ? GIT_FETCH_PRUNE : GIT_FETCH_PRUNE_UNSPECIFIED
+                
+                // 设置 tags 下载选项
                 fetchOptions.download_tags = options.fetchAllTags ? GIT_REMOTE_DOWNLOAD_TAGS_ALL : GIT_REMOTE_DOWNLOAD_TAGS_AUTO
+                
+                // 添加错误处理以解决锁文件问题
+                git_remote_init_callbacks(&fetchOptions.callbacks, UInt32(GIT_REMOTE_CALLBACKS_VERSION))
 
                 DispatchQueue.global(qos: .userInitiated).async {
                     let status = git_remote_fetch(remotePointer, nil, &fetchOptions, nil)
                     if status == GIT_OK.rawValue {
                         continuation.resume()
+                    } else if status == GIT_ELOCKED.rawValue {
+                        // 处理锁文件问题 - 等待一段时间后重试
+                        DispatchQueue.global().asyncAfter(deadline: .now() + 0.5) {
+                            let retryStatus = git_remote_fetch(remotePointer, nil, &fetchOptions, nil)
+                            if retryStatus == GIT_OK.rawValue {
+                                continuation.resume()
+                            } else {
+                                let errorMessage = String(cString: git_error_last().pointee.message)
+                                continuation.resume(throwing: RepositoryError.failedToFetch("Fetch failed after retry: \(errorMessage)"))
+                            }
+                        }
                     } else {
                         let errorMessage = String(cString: git_error_last().pointee.message)
                         continuation.resume(throwing: RepositoryError.failedToFetch(errorMessage))
@@ -728,12 +746,16 @@ class GitService: ObservableObject {
                 let allRemotes = try swiftGitXRepo.remote.list()
                 for remote in allRemotes {
                     print("Fetching from \(remote.name)...")
+                    // 使用SwiftGitX库的fetch方法来处理锁文件问题
                     try await swiftGitXRepo.fetch(remote: remote, options: options)
                 }
                 print("✅ Fetch successful for all remotes in \(repository.displayName)")
             } else {
                 if let remote = swiftGitXRepo.remote[options.remote] {
-                    try await swiftGitXRepo.fetch(remote: remote, options: options)
+                    print("Fetching from \(remote.name)...")
+                    // 使用SwiftGitX库的fetch方法来处理锁文件问题
+//                    try await swiftGitXRepo.fetch(remote: remote, options: options)
+                    try await swiftGitXRepo.fetch(remote: remote)
                     print("✅ Fetch successful for remote '\(options.remote)' in \(repository.displayName)")
                 } else {
                     throw GitServiceError.operationFailed("Remote '\(options.remote)' not found.")
@@ -757,6 +779,7 @@ class GitService: ObservableObject {
             let repoURL = URL(fileURLWithPath: repository.path)
             let swiftGitXRepo = try Repository.open(at: repoURL)
             
+            // 使用我们自定义的pull方法来处理锁文件问题
             try await swiftGitXRepo.pull(options: options)
 
             print("✅ Pull successful for repository \(repository.displayName)")
@@ -965,4 +988,13 @@ enum GitServiceError: LocalizedError {
         }
     }
 }
+
+
+
+
+
+
+
+
+
 
