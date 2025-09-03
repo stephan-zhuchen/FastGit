@@ -6,17 +6,19 @@
 //
 
 import SwiftUI
+// 新增：导入 SwiftGitX 库以访问新的 FetchOptions
+import SwiftGitX
 
-/// Fetch 操作的配置选项
-struct FetchOptions {
+struct UIFetchOptions {
     var remote: String = "origin"
-    var prune: Bool = true // Prune is a good default
+    var prune: Bool = true
     var fetchAllTags: Bool = true
 }
 
 /// Fetch 操作的视图，以 sheet 形式弹出
 struct FetchView: View {
-    @Binding var options: FetchOptions
+    // 绑定到 ViewModel 中定义的 UIFetchOptions
+    @Binding var options: UIFetchOptions
     let allRemotes: [String]
     let onConfirm: () -> Void
     let onCancel: () -> Void
@@ -46,6 +48,7 @@ struct FetchView: View {
                     Text("") // Placeholder for alignment
                     VStack(alignment: .leading, spacing: 10) {
                         Toggle("Prune (清理远程不再存在的分支)", isOn: $options.prune)
+                        // 这里使用了新的 fetchAllTags 属性
                         Toggle("Fetch all tags (拉取所有标签)", isOn: $options.fetchAllTags)
                     }
                 }
@@ -76,7 +79,7 @@ struct FetchView: View {
 #if DEBUG
 struct FetchView_Previews: PreviewProvider {
     struct PreviewWrapper: View {
-        @State var options = FetchOptions()
+        @State var options = UIFetchOptions()
         var body: some View {
             FetchView(
                 options: $options,

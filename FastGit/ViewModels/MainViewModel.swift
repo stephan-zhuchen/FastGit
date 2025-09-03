@@ -7,6 +7,8 @@
 
 import Foundation
 import SwiftUI
+// 新增: 导入 SwiftGitX 以使用新的 FetchOptions
+import SwiftGitX
 
 /// 主视图模型 - 管理应用的主要状态
 @MainActor
@@ -26,7 +28,7 @@ class MainViewModel: ObservableObject {
     @Published var branches: [GitBranch] = []
     @Published var tags: [GitTag] = []
     @Published var submodules: [String] = []
-    @Published var remotes: [String] = [] // --- 新增 ---
+    @Published var remotes: [String] = []
     @Published var selectedFunctionItem: SelectedFunctionItem? = .fixedOption(.defaultHistory)
     @Published var expandedSections: Set<ExpandableFunctionType> = [.localBranches]
 
@@ -36,13 +38,14 @@ class MainViewModel: ObservableObject {
     @Published var showingPullSheet = false
     @Published var showingStashSheet = false
     @Published var showingPushSheet = false
-    @Published var showingFetchSheet = false // --- 新增 ---
+    @Published var showingFetchSheet = false
     @Published var hasUncommittedChanges = false
     @Published var newBranchOptions = NewBranchOptions(baseBranch: GitBranch(name: ""))
     @Published var pullOptions: PullOptions?
     @Published var stashOptions = StashOptions()
     @Published var pushOptions: PushOptions?
-    @Published var fetchOptions = FetchOptions() // --- 新增 ---
+    // 更新：使用新的 UIFetchOptions 结构体
+    @Published var fetchOptions = UIFetchOptions()
 
     
     // MARK: - Private Properties
@@ -113,11 +116,11 @@ class MainViewModel: ObservableObject {
         
         async let historyData = gitService.fetchCommitHistory(for: repository)
         async let submoduleData = gitService.fetchSubmodules(for: repository)
-        async let remotesData = gitService.listRemotes(for: repository) // --- 新增 ---
+        async let remotesData = gitService.listRemotes(for: repository)
         
         let (fetchedCommits, fetchedBranches, fetchedTags) = await historyData
         let fetchedSubmodules = await submoduleData
-        self.remotes = await remotesData // --- 新增 ---
+        self.remotes = await remotesData
 
         self.commits = fetchedCommits
         self.branches = fetchedBranches
@@ -163,7 +166,8 @@ class MainViewModel: ObservableObject {
         Task {
             switch operation {
             case .fetch:
-                self.fetchOptions = FetchOptions()
+                // 初始化 UI 专用的 options
+                self.fetchOptions = UIFetchOptions()
                 self.showingFetchSheet = true
 
             case .pull:
@@ -266,10 +270,8 @@ class MainViewModel: ObservableObject {
     func performFetch(for repository: GitRepository) {
         print("Performing fetch with options: \(fetchOptions)")
 
-        // 新增：在执行操作前获取 SecurityScopedResourceManager 实例
         let securityManager = SecurityScopedResourceManager.shared
         
-        // 新增：检查SSH文件夹访问权限
         guard securityManager.hasSshFolderAccess else {
             self.errorMessage = "SSH文件夹访问未授权。\n\n请前往 设置 > 高级，并授权应用访问您的.ssh文件夹，以便执行需要SSH密钥的操作。"
             isPerformingToolbarAction = false
@@ -279,21 +281,33 @@ class MainViewModel: ObservableObject {
         Task {
             isPerformingToolbarAction = true
             
-            // 新增：开始访问SSH文件夹
             let accessStarted = securityManager.startAccessingSshFolder()
+            defer {
+                if accessStarted {
+                    securityManager.stopAccessingSshFolder()
+                    print("ℹ️ 已停止访问SSH文件夹")
+                }
+            }
+            
             if !accessStarted {
                  self.errorMessage = "无法开始访问SSH文件夹，请在设置中重新授权。"
                  isPerformingToolbarAction = false
                  return
             }
             
-            // 确保在操作结束后停止访问
-            defer {
-                securityManager.stopAccessingSshFolder()
-                print("ℹ️ 已停止访问SSH文件夹")
-            }
+            // 更新：将 UI-options 转换为库专用的 options
+            let libraryFetchOptions = FetchOptions(
+                prune: self.fetchOptions.prune,
+                fetchAllTags: self.fetchOptions.fetchAllTags
+            )
+
+            // 更新：调用 GitService 时传递正确的参数
+            await gitService.fetch(
+                remote: self.fetchOptions.remote,
+                with: libraryFetchOptions,
+                in: repository
+            )
             
-            await gitService.fetch(with: fetchOptions, in: repository)
             await self.refreshData(for: repository)
             
             isPerformingToolbarAction = false
