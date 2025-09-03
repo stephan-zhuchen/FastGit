@@ -62,7 +62,13 @@ fileprivate extension Repository {
         let repoPointer = self.pointer
         
         var remotePointer: OpaquePointer?
-        defer { git_remote_free(remotePointer) }
+        // --- 修复点: 在函数退出时，先断开连接，再释放对象 ---
+        defer {
+            if remotePointer != nil {
+                git_remote_disconnect(remotePointer)
+                git_remote_free(remotePointer)
+            }
+        }
         
         guard git_remote_lookup(&remotePointer, repoPointer, remoteName) == GIT_OK.rawValue, remotePointer != nil else {
             throw RepositoryError.failedToPush("找不到名为 '\(remoteName)' 的远程仓库。")
@@ -70,7 +76,7 @@ fileprivate extension Repository {
         
         var gitPushOptions = options.toGitPushOptions()
         
-        // 使用一个简单的异步任务来包装同步的 C 调用，避免复杂的 Sendable 问题
+        // 使用一个简单的异步任务来包装同步的 C 调用
         try await Task {
             try refspecs.withGitStrArray { gitStrArray in
                 let status = git_remote_push(remotePointer, &gitStrArray, &gitPushOptions)
@@ -127,15 +133,15 @@ class GitService: ObservableObject {
     
     deinit {
         // 清理SwiftGitX资源
-//        if isSwiftGitXInitialized {
-//            do {
-//                try SwiftGitX.shutdown()
-//                print("✅ SwiftGitX 已在deinit中关闭")
-//            } catch {
-//                print("⚠️ SwiftGitX 关闭失败: \(error)")
-//            }
-//            isSwiftGitXInitialized = false
-//        }
+        if isSwiftGitXInitialized {
+            do {
+                try SwiftGitX.shutdown()
+                print("✅ SwiftGitX 已在deinit中关闭")
+            } catch {
+                print("⚠️ SwiftGitX 关闭失败: \(error)")
+            }
+            isSwiftGitXInitialized = false
+        }
     }
     
     // MARK: - SwiftGitX 管理
