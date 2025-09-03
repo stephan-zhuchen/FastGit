@@ -127,15 +127,15 @@ class GitService: ObservableObject {
     
     deinit {
         // 清理SwiftGitX资源
-        if isSwiftGitXInitialized {
-            do {
-                try SwiftGitX.shutdown()
-                print("✅ SwiftGitX 已在deinit中关闭")
-            } catch {
-                print("⚠️ SwiftGitX 关闭失败: \(error)")
-            }
-            isSwiftGitXInitialized = false
-        }
+//        if isSwiftGitXInitialized {
+//            do {
+//                try SwiftGitX.shutdown()
+//                print("✅ SwiftGitX 已在deinit中关闭")
+//            } catch {
+//                print("⚠️ SwiftGitX 关闭失败: \(error)")
+//            }
+//            isSwiftGitXInitialized = false
+//        }
     }
     
     // MARK: - SwiftGitX 管理
