@@ -8,18 +8,18 @@
 import SwiftUI
 
 /// Push 操作的配置选项
-struct PushOptions {
+struct UIPushOptions {
     var localBranch: GitBranch
     var remoteBranch: GitBranch?
     var remote: String = "origin"
-    var ensureSubmodulesPushed: Bool = true
-    var pushTags: Bool = false
-    var forcePush: Bool = false
+    var ensureSubmodulesPushed: Bool = false // 默认不勾选
+    var pushTags: Bool = false               // 默认不勾选
+    var forcePush: Bool = false              // 默认不勾选
 }
 
 /// Push 操作的视图，以 sheet 形式弹出
 struct PushView: View {
-    @Binding var options: PushOptions
+    @Binding var options: UIPushOptions
     let allRemotes: [String]
     let allLocalBranches: [GitBranch]
     let allRemoteBranches: [GitBranch]
@@ -43,12 +43,9 @@ struct PushView: View {
                 GridRow(alignment: .center) {
                     Text("本地分支:")
                         .gridColumnAlignment(.trailing)
-                    Picker("", selection: $options.localBranch) {
-                        ForEach(allLocalBranches) { branch in
-                            Text(branch.name).tag(branch)
-                        }
-                    }
-                    .pickerStyle(.menu)
+                    // 本地分支通常是固定的，所以我们只显示它
+                    Text(options.localBranch.name)
+                        .padding(.leading, 4)
                 }
                 
                 GridRow(alignment: .center) {
@@ -65,7 +62,11 @@ struct PushView: View {
                 GridRow(alignment: .center) {
                     Text("远程分支:")
                         .gridColumnAlignment(.trailing)
+                    // 显示远程分支，允许用户选择
                     Picker("", selection: $options.remoteBranch) {
+                        // 添加一个 "无" 或 "与本地分支同名" 的选项
+                        Text(options.localBranch.shortName).tag(nil as GitBranch?)
+                        Divider()
                         ForEach(filteredRemoteBranches) { branch in
                             Text(branch.shortName).tag(branch as GitBranch?)
                         }
@@ -115,7 +116,7 @@ struct PushView_Previews: PreviewProvider {
     ]
     
     struct PreviewWrapper: View {
-        @State var options = PushOptions(
+        @State var options = UIPushOptions(
             localBranch: mockBranches[0],
             remoteBranch: mockBranches[2]
         )

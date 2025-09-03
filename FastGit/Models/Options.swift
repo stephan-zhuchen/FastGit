@@ -90,3 +90,27 @@ public struct FetchOptions {
     }
 }
 
+/// 为 'git push' 操作提供详细配置选项 (对接 SwiftGitX/libgit2)
+public struct PushOptions {
+    // 在这里可以为将来添加更多选项，例如回调（callbacks）等。
+    public var pb_parallelism: UInt32 = 1 // 默认并行数为1
+
+    /// 创建一个新的 PushOptions 实例。
+    public init(pb_parallelism: UInt32 = 1) {
+        self.pb_parallelism = pb_parallelism
+    }
+
+    /// 提供一个默认的配置实例。
+    public static let `default` = PushOptions()
+
+    /// 将 Swift 的 PushOptions 转换为 libgit2 使用的 C 结构体 `git_push_options`。
+    /// 这个方法确保了与底层 C 库的正确交互。
+    /// - Returns: 一个配置好的 `git_push_options` 实例。
+    internal func toGitPushOptions() -> git_push_options {
+        var gitOptions = git_push_options()
+        git_push_options_init(&gitOptions, UInt32(GIT_PUSH_OPTIONS_VERSION))
+        gitOptions.pb_parallelism = self.pb_parallelism
+        return gitOptions
+    }
+}
+

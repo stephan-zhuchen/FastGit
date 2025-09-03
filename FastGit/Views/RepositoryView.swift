@@ -92,7 +92,7 @@ struct RepositoryView: View {
             )
         }
         .sheet(isPresented: $viewModel.showingPullSheet) {
-            if var pullOptions = viewModel.pullOptions {
+            if let pullOptions = viewModel.pullOptions {
                 PullView(
                     options: Binding(
                         get: { pullOptions },
@@ -118,7 +118,7 @@ struct RepositoryView: View {
             )
         }
         .sheet(isPresented: $viewModel.showingPushSheet) {
-            if var pushOptions = viewModel.pushOptions {
+            if let pushOptions = viewModel.pushOptions {
                 PushView(
                     options: Binding(
                         get: { pushOptions },

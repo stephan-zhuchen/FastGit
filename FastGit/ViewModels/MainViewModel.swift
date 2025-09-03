@@ -43,7 +43,7 @@ class MainViewModel: ObservableObject {
     @Published var newBranchOptions = NewBranchOptions(baseBranch: GitBranch(name: ""))
     @Published var pullOptions: PullOptions?
     @Published var stashOptions = StashOptions()
-    @Published var pushOptions: PushOptions?
+    @Published var pushOptions: UIPushOptions?
     // 更新：使用新的 UIFetchOptions 结构体
     @Published var fetchOptions = UIFetchOptions()
 
@@ -209,7 +209,7 @@ class MainViewModel: ObservableObject {
                 }
                 
                 let remoteBranch = branches.first { $0.isRemote && $0.shortName == localBranch.name }
-                self.pushOptions = PushOptions(localBranch: localBranch, remoteBranch: remoteBranch)
+                self.pushOptions = UIPushOptions(localBranch: localBranch, remoteBranch: remoteBranch)
                 self.showingPushSheet = true
             }
         }
@@ -256,11 +256,13 @@ class MainViewModel: ObservableObject {
     
     /// 执行 Push 操作
     func performPush(for repository: GitRepository) {
-        guard let options = pushOptions else { return }
-        print("Performing push with options: \(options)")
+        guard let uiOptions = pushOptions else { return }
+        print("Performing push with UI options: \(uiOptions)")
+        
         Task {
             isPerformingToolbarAction = true
-            await gitService.push(with: options, in: repository)
+            // <--- 修改: 调用新的 GitService push 方法 ---
+            await gitService.push(with: uiOptions, in: repository)
             await self.refreshData(for: repository)
             isPerformingToolbarAction = false
         }

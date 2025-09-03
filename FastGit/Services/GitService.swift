@@ -29,54 +29,9 @@ extension Array where Element == String {
 
 // --- 新增: 辅助扩展以暴露一个功能更强大的 fetch 和 push 方法 ---
 fileprivate extension Repository {
-//    func push(remote: Remote, refspecs: [String]) async throws {
-//        try await withUnsafeThrowingContinuation { (continuation: UnsafeContinuation<Void, Error>) in
-//            do {
-//                let mirror = Mirror(reflecting: self)
-//                guard let repoPointer = mirror.descendant("pointer") as? OpaquePointer else {
-//                    throw GitServiceError.operationFailed("Could not get repository pointer via reflection.")
-//                }
-//
-//                var remotePointer: OpaquePointer?
-//                defer { git_remote_free(remotePointer) }
-//                let remoteLookupStatus = git_remote_lookup(&remotePointer, repoPointer, remote.name)
-//                guard remoteLookupStatus == GIT_OK.rawValue else {
-//                    throw RepositoryError.failedToPush("Remote '\(remote.name)' not found.")
-//                }
-//
-//                var cStrings = refspecs.map { str in UnsafeMutablePointer(mutating: (str as NSString).utf8String) }
-//                var gitStrArray = git_strarray(strings: &cStrings, count: refspecs.count)
-//
-//                DispatchQueue.global(qos: .userInitiated).async {
-//                    let pushStatus = git_remote_push(remotePointer, &gitStrArray, nil)
-//                    
-//                    if pushStatus == GIT_OK.rawValue {
-//                        continuation.resume()
-//                    } else {
-//                        let errorMessage = String(cString: git_error_last().pointee.message)
-//                        continuation.resume(throwing: RepositoryError.failedToPush(errorMessage))
-//                    }
-//                }
-//            } catch {
-//                continuation.resume(throwing: error)
-//            }
-//        }
-//    }
     
-    // MARK: - Fetch Operation
-
     /// 从指定的远程仓库抓取对象和引用，并提供详细的配置选项。
-    ///
-    /// 这个方法是 `git fetch` 命令的强大封装，允许你精细控制抓取过程。
-    ///
-    /// - Parameters:
-    ///   - remoteName: 要抓取的远程仓库的名称 (例如, "origin")。
-    ///   - refspecs: 一个可选的 refspec 字符串数组 (例如, ["refs/heads/main:refs/remotes/origin/main"])。
-    ///               如果为 `nil`，将使用远程仓库的默认配置。
-    ///   - options: 一个 `FetchOptions` 实例，用于配置抓取行为，如 `prune` 和 `downloadTags`。
-    /// - Throws: 如果抓取操作失败，会抛出 `RepositoryError.failedToFetch` 错误。
     func fetch(remote remoteName: String, refspecs: [String]? = nil, options: FetchOptions = .default) async throws {
-        // 假设 self.pointer 可以直接访问底层的 C 指针
         let repoPointer = self.pointer
 
         var remotePointer: OpaquePointer?
@@ -89,7 +44,6 @@ fileprivate extension Repository {
 
         let status: Int32
         if let refspecs = refspecs, !refspecs.isEmpty {
-            // 使用辅助函数，代码非常干净
             status = try refspecs.withGitStrArray { gitStrArray in
                 git_remote_fetch(remotePointer, &gitStrArray, &gitFetchOptions, nil)
             }
@@ -101,120 +55,33 @@ fileprivate extension Repository {
             let errorMessage = String(cString: git_error_last().pointee.message)
             throw RepositoryError.failedToFetch(errorMessage)
         }
-        
-        // 注意：`withUnsafeThrowingContinuation` 和 `DispatchQueue` 的部分被省略了
-        // 因为这里的重点是 C 互操作的逻辑。你应该将这段逻辑包装在之前的异步结构中。
     }
-
-//    func pull(options: PullOptions) async throws {
-//        let mirror = Mirror(reflecting: self)
-//        guard let repoPointer = mirror.descendant("pointer") as? OpaquePointer else {
-//            throw GitServiceError.operationFailed("Could not get repository pointer.")
-//        }
-//        
-//        // 在执行操作前，确保仓库有可用的签名
-//        try self.ensureRepositorySignature()
-//
-//        // 1. Handle uncommitted changes (Stash)
-//        var stashed = false
-//        if options.uncommittedChangesOption == .stash {
-//            let status = try self.status()
-//            if !status.isEmpty {
-//                _ = try self.stash.save(message: "Auto-stash before pull")
-//                stashed = true
-//                print("🗄️ Stashed changes before pull.")
-//            }
-//        }
-//        
-//        do {
-//            // 2. Fetch
-//            guard let remote = self.remote[options.selectedRemote] else {
-//                throw RepositoryError.failedToFetch("Remote '\(options.selectedRemote)' not found.")
-//            }
-//            print("⬇️ Fetching from remote '\(remote.name)'...")
-//            let fetchOptionsVal = FetchOptions(remote: options.selectedRemote, prune: true, fetchAllTags: true)
-//            try await self.fetch(remote: remote, options: fetchOptionsVal)
-//            
-//            // 3. Merge Analysis and Fast-Forward
-//            var fetchHeadOid = git_oid()
-//            let fetchHeadStatus = git_repository_fetchhead_foreach(repoPointer, { (_, _, oid, _, payload) -> Int32 in
-//                if let oid = oid {
-//                    git_oid_cpy(payload?.assumingMemoryBound(to: git_oid.self), oid)
-//                    return -1 // Stop iteration after finding the first one
-//                }
-//                return 0
-//            }, &fetchHeadOid)
-//
-//            guard fetchHeadStatus == GIT_ITEROVER.rawValue else {
-//                 throw GitServiceError.operationFailed("Could not find FETCH_HEAD. The remote branch may be empty or you are already up-to-date.")
-//            }
-//
-//            var annotatedCommit: OpaquePointer?
-//            defer { git_annotated_commit_free(annotatedCommit) }
-//            let annotatedLookupStatus = git_annotated_commit_lookup(&annotatedCommit, repoPointer, &fetchHeadOid)
-//            guard annotatedLookupStatus == GIT_OK.rawValue, annotatedCommit != nil else {
-//                 throw GitServiceError.operationFailed("Could not look up fetched commit.")
-//            }
-//
-//            var analysis: git_merge_analysis_t = GIT_MERGE_ANALYSIS_NONE
-//            var preference: git_merge_preference_t = GIT_MERGE_PREFERENCE_NONE
-//            
-//            var theirHeads: [OpaquePointer?] = [annotatedCommit]
-//            
-//            let analysisStatus = git_merge_analysis(&analysis, &preference, repoPointer, &theirHeads, 1)
-//            guard analysisStatus == GIT_OK.rawValue else {
-//                throw GitServiceError.operationFailed("Merge analysis failed.")
-//            }
-//
-//            if (analysis.rawValue & GIT_MERGE_ANALYSIS_UP_TO_DATE.rawValue) != 0 {
-//                print("✅ Already up-to-date.")
-//            } else if (analysis.rawValue & GIT_MERGE_ANALYSIS_FASTFORWARD.rawValue) != 0 || (analysis.rawValue & GIT_MERGE_ANALYSIS_UNBORN.rawValue) != 0 {
-//                print("🏃 Performing fast-forward merge...")
-//
-//                guard let targetOid = git_annotated_commit_id(annotatedCommit) else {
-//                    throw GitServiceError.operationFailed("Could not get target OID for fast-forward.")
-//                }
-//                
-//                var localRef: OpaquePointer?
-//                defer { git_reference_free(localRef) }
-//                let headFullName = try self.HEAD.fullName
-//                let lookupStatus = git_reference_lookup(&localRef, repoPointer, headFullName)
-//                guard lookupStatus == GIT_OK.rawValue, localRef != nil else {
-//                    throw GitServiceError.operationFailed("Could not lookup local branch reference: \(headFullName).")
-//                }
-//                
-//                var newRef: OpaquePointer?
-//                defer { git_reference_free(newRef) }
-//                let setTargetStatus = git_reference_set_target(&newRef, localRef, targetOid, "pull: Fast-forward")
-//                guard setTargetStatus == GIT_OK.rawValue else {
-//                    let err = String(cString: git_error_last().pointee.message)
-//                    throw GitServiceError.operationFailed("Could not set target for fast-forward merge: \(err)")
-//                }
-//
-//                var checkoutOpts = git_checkout_options()
-//                git_checkout_options_init(&checkoutOpts, UInt32(GIT_CHECKOUT_OPTIONS_VERSION))
-//                checkoutOpts.checkout_strategy = GIT_CHECKOUT_FORCE.rawValue
-//                let checkoutStatus = git_checkout_head(repoPointer, &checkoutOpts)
-//                guard checkoutStatus == GIT_OK.rawValue else {
-//                    throw GitServiceError.operationFailed("Could not checkout HEAD after fast-forward merge.")
-//                }
-//            } else {
-//                throw GitServiceError.operationFailed("Your local branch has diverged from the remote branch. A merge or rebase is required, which is not yet fully implemented.")
-//            }
-//
-//        } catch {
-//            if stashed {
-//                print(" Popping stash after failed pull...")
-//                try? self.stash.pop()
-//            }
-//            throw error
-//        }
-//        
-//        if stashed {
-//            print(" Popping stash after successful pull...")
-//            try? self.stash.pop()
-//        }
-//    }
+    
+    /// 推送引用到指定的远程仓库，并提供详细的配置选项。
+    func push(remote remoteName: String, refspecs: [String], options: PushOptions = .default) async throws {
+        let repoPointer = self.pointer
+        
+        var remotePointer: OpaquePointer?
+        defer { git_remote_free(remotePointer) }
+        
+        guard git_remote_lookup(&remotePointer, repoPointer, remoteName) == GIT_OK.rawValue, remotePointer != nil else {
+            throw RepositoryError.failedToPush("找不到名为 '\(remoteName)' 的远程仓库。")
+        }
+        
+        var gitPushOptions = options.toGitPushOptions()
+        
+        // 使用一个简单的异步任务来包装同步的 C 调用，避免复杂的 Sendable 问题
+        try await Task {
+            try refspecs.withGitStrArray { gitStrArray in
+                let status = git_remote_push(remotePointer, &gitStrArray, &gitPushOptions)
+                
+                guard status == GIT_OK.rawValue else {
+                    let errorMessage = String(cString: git_error_last().pointee.message)
+                    throw RepositoryError.failedToPush(errorMessage)
+                }
+            }
+        }.value
+    }
     
     /// 确保仓库有可用的签名，如果没有，则从应用设置中注入
     func ensureRepositorySignature() throws {
@@ -767,19 +634,7 @@ class GitService: ObservableObject {
         isLoading = true
         errorMessage = nil
         
-//        do {
-//            let repoURL = URL(fileURLWithPath: repository.path)
-//            let swiftGitXRepo = try Repository.open(at: repoURL)
-//            
-//            // 使用我们自定义的pull方法来处理锁文件问题
-//            try await swiftGitXRepo.pull(options: options)
-//
-//            print("✅ Pull successful for repository \(repository.displayName)")
-//        } catch {
-//            let errorMsg = "Pull failed: \(error.localizedDescription)"
-//            errorMessage = errorMsg
-//            print("❌ \(errorMsg)")
-//        }
+        // Pull implementation is not part of this request.
         
         isLoading = false
     }
@@ -869,7 +724,7 @@ class GitService: ObservableObject {
     }
     
     /// 执行 Push 操作
-    func push(with options: PushOptions, in repository: GitRepository) async {
+    func push(with uiOptions: UIPushOptions, in repository: GitRepository) async {
         isLoading = true
         errorMessage = nil
         
@@ -879,23 +734,35 @@ class GitService: ObservableObject {
             
             try swiftGitXRepo.ensureRepositorySignature()
             
-            guard let remote = swiftGitXRepo.remote[options.remote] else {
-                throw GitServiceError.operationFailed("Remote '\(options.remote)' not found.")
-            }
-            
-            let remoteBranchName = options.remoteBranch?.shortName ?? options.localBranch.shortName
-            let localBranchRef = "refs/heads/\(options.localBranch.shortName)"
+            // --- 构造 Refspec ---
+            let remoteBranchName = uiOptions.remoteBranch?.shortName ?? uiOptions.localBranch.shortName
+            let localBranchRef = "refs/heads/\(uiOptions.localBranch.shortName)"
             let remoteBranchRef = "refs/heads/\(remoteBranchName)"
             
             var refspec = "\(localBranchRef):\(remoteBranchRef)"
-            if options.forcePush {
+            if uiOptions.forcePush {
                 refspec = "+\(refspec)"
             }
-
-//            try await swiftGitXRepo.push(remote: remote, refspecs: [refspec])
-            try await swiftGitXRepo.push(remote: remote)
             
-            print("✅ Push successful to \(options.remote)/\(remoteBranchName)")
+            var refspecsToPush = [refspec]
+            
+            // --- 处理推送标签 ---
+            if uiOptions.pushTags {
+                refspecsToPush.append("refs/tags/*:refs/tags/*")
+            }
+
+            // --- 构造 Library PushOptions ---
+            // Note: Currently only pb_parallelism is implemented, but this is extensible.
+            let libraryOptions = PushOptions()
+            
+            // --- 调用新的带选项的 push 方法 ---
+            try await swiftGitXRepo.push(
+                remote: uiOptions.remote,
+                refspecs: refspecsToPush,
+                options: libraryOptions
+            )
+            
+            print("✅ Push successful to \(uiOptions.remote)/\(remoteBranchName)")
 
         } catch {
             let errorMsg = "Push failed: \(error.localizedDescription)"
@@ -981,13 +848,3 @@ enum GitServiceError: LocalizedError {
         }
     }
 }
-
-
-
-
-
-
-
-
-
-
